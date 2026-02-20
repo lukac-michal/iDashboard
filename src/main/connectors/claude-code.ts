@@ -18,8 +18,8 @@ export class ClaudeCodeConnector extends BaseConnector {
 
   private activeSessions = new Map<string, { lastEvent: number; status: string }>();
 
-  override async initialize(config: Parameters<BaseConnector['initialize']>[0]): Promise<void> {
-    await super.initialize(config);
+  override async initialize(...args: Parameters<BaseConnector['initialize']>): Promise<void> {
+    await super.initialize(...args);
     this.status.connected = true; // Push connector is always "connected"
   }
 
@@ -29,7 +29,6 @@ export class ClaudeCodeConnector extends BaseConnector {
     const sessionId = req.session ?? 'unknown';
     const message = req.message ?? req.body ?? '';
 
-    // Track session state
     this.activeSessions.set(sessionId, {
       lastEvent: Date.now(),
       status: eventType,
@@ -46,10 +45,12 @@ export class ClaudeCodeConnector extends BaseConnector {
           severity: 'attention',
           title: `Claude Code: ${sessionId}`,
           body: message || 'Waiting for your input',
+          category: 'notification',
+          eventType: 'needs-input',
           metadata: { sessionId, eventType },
           uiHints: {
             icon: 'terminal',
-            color: '#f97316', // orange
+            color: '#f97316',
             blinkDurationMs: blinkDuration,
             actionButtons: [
               { id: 'focus', label: 'Focus Terminal', icon: 'external-link', variant: 'primary' },
@@ -63,10 +64,12 @@ export class ClaudeCodeConnector extends BaseConnector {
           severity: 'info',
           title: `Claude Code: ${sessionId}`,
           body: 'Task completed',
+          category: 'notification',
+          eventType: 'task-complete',
           metadata: { sessionId, eventType },
           uiHints: {
             icon: 'check-circle',
-            color: '#22c55e', // green
+            color: '#22c55e',
             actionButtons: [
               { id: 'dismiss', label: 'Clear', icon: 'x' },
             ],
@@ -78,41 +81,24 @@ export class ClaudeCodeConnector extends BaseConnector {
           severity: req.severity ?? 'info',
           title: req.title ?? `Claude Code: ${sessionId}`,
           body: message,
+          category: 'notification',
+          eventType,
           metadata: { sessionId, eventType },
-          uiHints: req.uiHints ?? {
-            icon: 'terminal',
-            color: '#f97316',
-          },
+          uiHints: req.uiHints ?? { icon: 'terminal', color: '#f97316' },
         });
     }
   }
 
   override getActions(): ConnectorAction[] {
     return [
-      {
-        id: 'focus',
-        label: 'Focus Terminal',
-        icon: 'external-link',
-        description: 'Bring the terminal window to the foreground',
-      },
-      {
-        id: 'dismiss',
-        label: 'Dismiss',
-        icon: 'x',
-        description: 'Dismiss the notification',
-      },
+      { id: 'focus', label: 'Focus Terminal', icon: 'external-link', description: 'Bring terminal to foreground' },
+      { id: 'dismiss', label: 'Dismiss', icon: 'x', description: 'Dismiss the notification' },
     ];
   }
 
-  override async executeAction(actionId: string, params?: unknown): Promise<void> {
-    switch (actionId) {
-      case 'focus':
-        // Platform-specific terminal focus will be implemented in window manager
-        // This is a placeholder for the action dispatch
-        break;
-      case 'dismiss':
-        // Handled by the event bus - dismiss the event
-        break;
+  override async executeAction(actionId: string, _params?: unknown): Promise<void> {
+    if (actionId === 'focus') {
+      // Dispatched to window manager via event bus
     }
   }
 

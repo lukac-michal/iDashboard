@@ -1,0 +1,30 @@
+# Custom Webhook Receiver
+# Receives inbound webhooks from GitHub, GitLab, Bitbucket, PagerDuty
+# Copy to ~/.idashboard/connectors/webhook-github.yaml
+
+id: webhook-github-deploys
+type: webhook
+displayName: "GitHub Webhooks"
+enabled: true
+pollIntervalMs: 0                 # push-only
+
+auth:
+  type: webhook-secret
+  secret: "${GITHUB_WEBHOOK_SECRET}"
+
+settings:
+  source: github                  # github | gitlab | bitbucket | pagerduty | generic
+  eventFilter:
+    - "workflow_run"
+    - "deployment_status"
+  severityMapping:
+    completed.success: "info"
+    completed.failure: "critical"
+    in_progress: "info"
+
+ui:
+  icon: webhook
+  color: "#6366f1"
+  priority: 5
+  showBadge: true
+  blinkOnAttention: true

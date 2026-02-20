@@ -1,29 +1,88 @@
 # iDashboard - Main Configuration
 # Copy this to ~/.idashboard/config.yaml and customize
+# All values shown are defaults — only override what you need
 
-app:
-  port: 19280                      # Local API server port
-  startMinimized: true             # Start in system tray
-  defaultWindowMode: floating      # floating | docked | tray | fullscreen
-  defaultSize:
+# ─── Window Behavior ───────────────────────────────────────────────
+window:
+  defaultMode: floating           # floating | docked | tray | fullscreen
+  size:
     width: 400
     height: 300
-  alwaysOnTop: true
-  opacity: 0.95                    # Window opacity (0.0 - 1.0)
-  theme: dark                      # dark | light | auto
+    minWidth: 80
+    minHeight: 60
+    rememberLastSize: true
+  position:
+    x: null                       # null = center of screen
+    y: null
+    rememberLastPosition: true
+  opacity: 0.95
+  frameless: true
+  theme: dark                     # dark | light | auto
 
+  dock:
+    position: bottom-right        # null | top | bottom | left | right | top-left | top-right | bottom-left | bottom-right
+    offsetX: 0
+    offsetY: 0
+    autoHide: false
+    autoHideDelayMs: 5000
+    showOnHover: true
+
+  alwaysOnTop:
+    permanent: false
+    onNotification:
+      enabled: true
+      durationSec: 30
+      flashCount: 3
+      flashIntervalMs: 500
+      afterExpiry: hide           # hide | lower | minimize | stay
+      cancelOnInteraction: true
+
+# ─── Local API Server ──────────────────────────────────────────────
 api:
-  bind: "127.0.0.1"               # NEVER change this to 0.0.0.0
+  port: 19280
+  bind: "127.0.0.1"              # NEVER change this to 0.0.0.0
   auth:
-    enabled: false                 # Enable bearer token for local API
+    enabled: false
     # token: "${IDASHBOARD_API_TOKEN}"
+  rateLimit:
+    maxRequestsPerMinute: 120
+    maxBurstSize: 20
 
+# ─── Event Behavior ────────────────────────────────────────────────
 events:
-  maxHistory: 1000                 # Rolling buffer size
-  defaultTTL: 3600000              # 1 hour (ms)
-  attentionBlinkDefault: 30000     # 30 seconds (ms)
+  maxHistory: 1000
+  defaultTTLMs: 3600000           # 1 hour
+  deduplication:
+    enabled: true
+    windowMs: 5000
 
+# ─── Notifications ─────────────────────────────────────────────────
 notifications:
-  sound: true
-  soundFile: null                  # Custom sound file path (null = system default)
-  nativeNotification: true         # Also show OS-level notification
+  sound:
+    enabled: true
+    file: null
+    volume: 0.7
+  nativeNotification: true
+  trayIconBadge: true
+
+# ─── Storage ──────────────────────────────────────────────────────
+storage:
+  retentionDays: 30
+  aggregateRetentionDays: 90
+  vacuumIntervalHours: 168        # weekly
+
+# ─── Network Reachability ─────────────────────────────────────────
+network:
+  vpnInterfaceCheckIntervalSec: 30
+  dnsCheckTimeoutMs: 3000
+  circuitBreaker:
+    failureThreshold: 5
+    halfOpenRetryMs: 30000
+    maxBackoffMs: 300000          # 5 minutes
+    backoffJitter: 0.3
+
+# ─── Startup ──────────────────────────────────────────────────────
+startup:
+  launchAtLogin: false
+  startMinimized: true
+  checkForUpdates: true

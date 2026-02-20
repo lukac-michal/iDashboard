@@ -1,0 +1,32 @@
+# Slack Connector
+# Monitors channels for keywords and @mentions
+# Copy to ~/.idashboard/connectors/slack.yaml
+
+id: slack-team
+type: slack
+displayName: "Slack: #deployments"
+enabled: true
+pollIntervalMs: 30000
+
+auth:
+  type: oauth-authorization-code  # oauth-authorization-code | bearer (manual token)
+  # After OAuth flow, token is stored in safeStorage
+  # For manual setup, use: type: bearer, token: "${SLACK_BOT_TOKEN}"
+
+settings:
+  channels:
+    - "#deployments"
+    - "#incidents"
+  keywordFilters:
+    - "deploy"
+    - "rollback"
+    - "incident"
+  mentionAlerts: true             # alert when you're @mentioned
+  socketMode: false               # true = use WebSocket instead of polling
+
+ui:
+  icon: message-square
+  color: "#e01e5a"
+  priority: 4
+  showBadge: true
+  blinkOnAttention: true

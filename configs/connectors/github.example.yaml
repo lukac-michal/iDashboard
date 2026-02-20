@@ -1,0 +1,29 @@
+# GitHub Actions Connector
+# Monitors workflow runs, PR checks, and deployment approvals
+# Copy to ~/.idashboard/connectors/github.yaml
+
+id: github-my-project
+type: github
+displayName: "GitHub: my-project"
+enabled: true
+pollIntervalMs: 30000
+
+auth:
+  type: pat                       # pat | oauth-device-flow
+  token: "${GITHUB_TOKEN}"
+
+settings:
+  repos:
+    - "myorg/api-server"
+    - "myorg/frontend"
+  monitorWorkflows: true
+  monitorChecks: true
+  monitorDeployments: true
+  failureOnly: false              # true = only emit events for failures
+
+ui:
+  icon: github
+  color: "#8b5cf6"
+  priority: 3
+  showBadge: true
+  blinkOnAttention: true
