@@ -1,0 +1,48 @@
+# iDashboard - Graylog Connector
+# Copy to ~/.idashboard/connectors/graylog-main.yaml
+
+id: graylog-main
+type: graylog
+displayName: "Graylog"
+enabled: true
+pollIntervalMs: 30000              # Poll every 30 seconds
+
+auth:
+  type: token
+  token: "${GRAYLOG_TOKEN}"        # Access token (used as username with password "token")
+
+settings:
+  baseUrl: "https://graylog.example.com"
+  monitorAlerts: true              # Poll for active alerts/events
+  monitorStreams: true             # Check stream health
+  customQueries:                   # Custom log searches to monitor
+    - name: "Error Rate"
+      query: "level:ERROR"
+      timeRange: "relative"
+      timeRangeValue: 300          # Last 5 minutes
+      threshold: 50                # Warn if count exceeds this
+      severity: "warning"
+    # - name: "Critical Exceptions"
+    #   query: "level:ERROR AND exception:*NullPointer*"
+    #   timeRange: "relative"
+    #   timeRangeValue: 600
+    #   threshold: 5
+    #   severity: "critical"
+
+ui:
+  icon: "scroll-text"
+  color: "#8b5cf6"                 # Purple
+  priority: 4
+  tiers:
+    micro:
+      showBadge: true
+      blinkOnAttention: true
+    compact:
+      showLastEvent: true
+      maxTitleLength: 40
+    standard:
+      showActions: true
+      showEventHistory: 3
+    expanded:
+      showFullHistory: true
+      showChart: true

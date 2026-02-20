@@ -1,0 +1,45 @@
+# iDashboard - Claude Code Connector
+# Copy to ~/.idashboard/connectors/claude-code.yaml
+#
+# This connector works via PUSH: Claude Code hooks send events
+# to iDashboard's local API when Claude needs your attention.
+#
+# Setup:
+#   1. Run: idashboard setup claude-code
+#      (or manually add hooks to ~/.claude/settings.json)
+#
+#   2. The hooks will POST to http://localhost:19280/api/v1/events
+#      whenever Claude Code needs input or completes a task.
+
+id: claude-code
+type: claude-code
+displayName: "Claude Code"
+enabled: true
+pollIntervalMs: 0                  # Push-only, no polling needed
+
+auth:
+  type: none                       # No auth needed for push connector
+
+settings:
+  blinkDurationMs: 30000           # How long the attention indicator blinks
+  autoExpireCompletedMs: 300000    # Auto-clear "completed" events after 5 min
+  focusTerminalCommand: null       # Override platform-specific focus command
+  # focusTerminalCommand: "osascript -e 'tell application \"Terminal\" to activate'"
+
+ui:
+  icon: "terminal"
+  color: "#f97316"                 # Orange
+  priority: 1                      # Highest priority - show first
+  tiers:
+    micro:
+      showBadge: true
+      blinkOnAttention: true
+    compact:
+      showLastEvent: true
+      maxTitleLength: 30
+    standard:
+      showActions: true
+      showEventHistory: 5
+    expanded:
+      showFullHistory: true
+      showChart: false

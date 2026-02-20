@@ -1,0 +1,25 @@
+{
+  "_comment": "Add these hooks to your ~/.claude/settings.json to integrate with iDashboard",
+  "_instructions": [
+    "1. Open ~/.claude/settings.json",
+    "2. Add the 'hooks' section below to your existing settings",
+    "3. Restart Claude Code sessions for hooks to take effect",
+    "4. Make sure iDashboard is running on port 19280"
+  ],
+  "hooks": {
+    "Notification": [
+      {
+        "type": "command",
+        "command": "curl -s -X POST http://localhost:19280/api/v1/events -H 'Content-Type: application/json' -d '{\"connector\": \"claude-code\", \"event\": \"needs-input\", \"session\": \"'$(basename \"$PWD\")'\"}'",
+        "_description": "Fires when Claude Code needs your input (e.g., choose an option, approve a tool use)"
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "curl -s -X POST http://localhost:19280/api/v1/events -H 'Content-Type: application/json' -d '{\"connector\": \"claude-code\", \"event\": \"task-complete\", \"session\": \"'$(basename \"$PWD\")'\"}'",
+        "_description": "Fires when Claude Code finishes responding and the conversation stops"
+      }
+    ]
+  }
+}

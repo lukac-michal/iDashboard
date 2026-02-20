@@ -1,0 +1,29 @@
+node_modules/
+dist/
+out/
+*.tsbuildinfo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# User config (contains secrets)
+# The app reads from ~/.idashboard/ at runtime
+config.local.yaml
+
+# Electron builder output
+release/
+
+# Test
+coverage/

@@ -1,0 +1,38 @@
+# iDashboard - OctopusDeploy Connector
+# Copy to ~/.idashboard/connectors/octopus-prod.yaml
+
+id: octopus-prod
+type: octopus-deploy
+displayName: "Octopus Deploy"
+enabled: true
+pollIntervalMs: 30000              # Poll every 30 seconds
+
+auth:
+  type: apiKey
+  apiKey: "${OCTOPUS_API_KEY}"     # Set via environment variable
+  headerName: "X-Octopus-ApiKey"
+
+settings:
+  baseUrl: "https://octopus.example.com"
+  spaceId: "Spaces-1"             # Octopus space ID
+  projects: []                     # Empty = monitor all. Or list specific names/IDs
+  environments: []                 # Empty = all environments
+  monitorGuidedFailures: true      # Alert on guided failure (needs human intervention)
+
+ui:
+  icon: "rocket"
+  color: "#2563eb"                 # Blue
+  priority: 2
+  tiers:
+    micro:
+      showBadge: true
+      blinkOnAttention: true
+    compact:
+      showLastEvent: true
+      maxTitleLength: 40
+    standard:
+      showActions: true
+      showEventHistory: 3
+    expanded:
+      showFullHistory: true
+      showChart: true

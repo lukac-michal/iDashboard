@@ -1,0 +1,29 @@
+# iDashboard - Main Configuration
+# Copy this to ~/.idashboard/config.yaml and customize
+
+app:
+  port: 19280                      # Local API server port
+  startMinimized: true             # Start in system tray
+  defaultWindowMode: floating      # floating | docked | tray | fullscreen
+  defaultSize:
+    width: 400
+    height: 300
+  alwaysOnTop: true
+  opacity: 0.95                    # Window opacity (0.0 - 1.0)
+  theme: dark                      # dark | light | auto
+
+api:
+  bind: "127.0.0.1"               # NEVER change this to 0.0.0.0
+  auth:
+    enabled: false                 # Enable bearer token for local API
+    # token: "${IDASHBOARD_API_TOKEN}"
+
+events:
+  maxHistory: 1000                 # Rolling buffer size
+  defaultTTL: 3600000              # 1 hour (ms)
+  attentionBlinkDefault: 30000     # 30 seconds (ms)
+
+notifications:
+  sound: true
+  soundFile: null                  # Custom sound file path (null = system default)
+  nativeNotification: true         # Also show OS-level notification

@@ -1,0 +1,40 @@
+# iDashboard - TeamCity Connector
+# Copy to ~/.idashboard/connectors/teamcity-prod.yaml
+
+id: teamcity-prod
+type: teamcity
+displayName: "TeamCity Production"
+enabled: true
+pollIntervalMs: 15000              # Poll every 15 seconds
+
+auth:
+  type: bearer
+  token: "${TEAMCITY_TOKEN}"       # Set via environment variable
+
+settings:
+  baseUrl: "https://teamcity.example.com"
+  buildConfigs: []                 # Empty = monitor all. Or list specific IDs:
+    # - "MyProject_Build"
+    # - "MyProject_Deploy"
+  failureThreshold: 2              # Alert after N consecutive failures
+  queueDepthWarning: 5             # Warn if queue depth exceeds this
+  includeRunning: true
+  includeQueued: true
+
+ui:
+  icon: "hammer"
+  color: "#06b6d4"                 # Cyan
+  priority: 3
+  tiers:
+    micro:
+      showBadge: true
+      blinkOnAttention: true
+    compact:
+      showLastEvent: true
+      maxTitleLength: 40
+    standard:
+      showActions: true
+      showEventHistory: 3
+    expanded:
+      showFullHistory: true
+      showChart: true
