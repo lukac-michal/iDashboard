@@ -31,7 +31,12 @@ macOS has several tools in the overlay/widget space. None fully satisfy the requ
 | **BetterTouchTool** | Floating web views with always-on-top | Paid ($22). Building on someone else's platform. Limited auto-hide/dock control, no config-file-driven setup, no connector abstraction |
 | **GeekTool** | Desktop-level widgets | Behind all windows (like Übersicht but older), not actively maintained |
 
-**Verdict:** Building a custom app is warranted. The unique combination of dockable + temporary always-on-top + free-form resize + configurable REST connectors + config-file-driven behavior doesn't exist in any single tool. Hammerspoon comes closest but would require building the same app with worse tooling.
+**Verdict:** Building a custom app is warranted. The unique combination of dockable + temporary always-on-top + free-form resize + configurable REST connectors + config-file-driven behavior doesn't exist in any single tool. Hammerspoon comes closest but would require building the same app with worse tooling (no React, no TypeScript, no component model, no packaging, primitive debugging).
+
+**Practical use of existing tools alongside iDashboard:**
+
+- **Hammerspoon as rapid prototype (optional):** Before the full Electron build, the core UX (docking, auto-hide timing, overlay behavior) could be validated with a ~150-line Hammerspoon `hs.webview` + `hs.httpserver` prototype in 1-2 days. This lets you iterate on window behavior before committing to the full implementation.
+- **SwiftBar as menu bar complement:** Even after building iDashboard, a tiny SwiftBar script that shows aggregate status (green/yellow/red dot) in the macOS menu bar is a useful "at-a-glance" indicator when the main dashboard is hidden. ~30 minute addition.
 
 ---
 
