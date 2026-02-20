@@ -392,6 +392,143 @@ curl -X POST http://localhost:19280/api/v1/events \
   }'
 ```
 
+##### 4.1.7 GitHub Actions Connector
+
+**Direction:** Pull (polls GitHub REST/GraphQL API)
+
+**Auth:** Personal Access Token (PAT) or GitHub App (OAuth2 Device Flow — see Section 4.8)
+
+**Key endpoints polled:**
+| Data | Endpoint | Interval |
+|------|----------|----------|
+| Workflow runs | `GET /repos/{owner}/{repo}/actions/runs?status=in_progress` | 30s |
+| Recent failures | `GET /repos/{owner}/{repo}/actions/runs?status=failure&per_page=10` | 60s |
+| PR check suites | `GET /repos/{owner}/{repo}/commits/{ref}/check-suites` | 30s |
+| Pending deployments | `GET /repos/{owner}/{repo}/actions/runs/{id}/pending_deployments` | 30s |
+
+**Events generated:**
+- `workflow-started` (info)
+- `workflow-succeeded` (info)
+- `workflow-failed` (error)
+- `workflow-cancelled` (warning)
+- `deployment-pending-approval` (attention) — needs human approval in GitHub
+- `check-suite-failed` (error) — PR checks failing
+
+**Config example:**
+```yaml
+id: github-my-project
+type: github
+displayName: "GitHub: my-project"
+pollIntervalMs: 30000
+auth:
+  type: pat                       # pat | oauth-device-flow
+  token: "${ENV_GITHUB_TOKEN}"
+settings:
+  repos:                          # repos to monitor (owner/repo format)
+    - "myorg/api-server"
+    - "myorg/frontend"
+  monitorWorkflows: true          # monitor GitHub Actions workflow runs
+  monitorChecks: true             # monitor PR check suites
+  monitorDeployments: true        # monitor deployment approvals
+  failureOnly: false              # if true, only emit events for failures
+ui:
+  icon: "github"
+  color: "#8b5cf6"
+  priority: 3
+```
+
+##### 4.1.8 Slack Connector
+
+**Direction:** Pull (polls Slack Web API) + Push (Incoming Webhooks)
+
+**Auth:** Bot Token (`xoxb-*`) via OAuth2 Authorization Code flow (see Section 4.8), or manually supplied token.
+
+**Key endpoints polled:**
+| Data | Endpoint | Interval |
+|------|----------|----------|
+| Channel messages (filtered) | `GET conversations.history` | 30s |
+| Thread replies | `GET conversations.replies` | 30s |
+| User presence | `GET users.getPresence` | 60s |
+| Starred messages | `GET stars.list` | 120s |
+
+**Push mode:** Slack also supports push via Socket Mode (WebSocket connection using app-level token `xapp-*`), eliminating the need for polling. When Socket Mode is enabled, the connector subscribes to Events API events (e.g., `message`, `reaction_added`) in real-time.
+
+**Events generated:**
+- `message-received` (info) — message in a monitored channel matching keyword filters
+- `mention-received` (attention) — user was @mentioned
+- `reaction-alert` (info) — specific emoji reactions on tracked messages (e.g., `:rotating_light:`)
+- `thread-reply` (info) — reply in a tracked thread
+
+**Config example:**
+```yaml
+id: slack-team
+type: slack
+displayName: "Slack: #deployments"
+pollIntervalMs: 30000             # 0 if using Socket Mode
+auth:
+  type: oauth                     # oauth | manual-token
+  # token populated after OAuth flow, stored in safeStorage
+settings:
+  channels:                       # channel names or IDs to monitor
+    - "#deployments"
+    - "#incidents"
+  keywordFilters:                 # only surface messages matching these keywords
+    - "deploy"
+    - "rollback"
+    - "incident"
+  mentionAlerts: true             # alert when the authenticated user is @mentioned
+  socketMode: false               # use Socket Mode for real-time events (requires xapp token)
+ui:
+  icon: "slack"
+  color: "#e01e5a"
+  priority: 4
+```
+
+##### 4.1.9 Custom Webhook Receiver
+
+**Direction:** Push (receives inbound webhooks from any service)
+
+A built-in HTTP endpoint that accepts webhooks from GitHub, GitLab, Bitbucket, PagerDuty, or any service that supports outbound webhooks. Unlike the Generic Push Connector (4.1.6), this provides signature verification, payload parsing, and source-specific normalization.
+
+**Endpoint:** `POST /api/v1/webhooks/{source}`
+
+**Supported sources (with built-in payload parsers):**
+| Source | Signature Header | Events Parsed |
+|--------|-----------------|---------------|
+| `github` | `X-Hub-Signature-256` (HMAC-SHA256) | `push`, `pull_request`, `workflow_run`, `issues`, `release` |
+| `gitlab` | `X-Gitlab-Token` (shared secret) | `push`, `merge_request`, `pipeline`, `deployment` |
+| `bitbucket` | `X-Hub-Signature` (HMAC-SHA256) | `repo:push`, `pullrequest:*`, `repo:build_status` |
+| `pagerduty` | PagerDuty v3 signature (HMAC-SHA256) | `incident.triggered`, `incident.resolved`, `incident.escalated` |
+| `generic` | Optional `X-Webhook-Secret` | Treats entire body as event payload |
+
+**Config example:**
+```yaml
+id: webhook-github-deploys
+type: webhook
+displayName: "GitHub Webhooks"
+auth:
+  type: webhook-secret
+  secret: "${ENV_GITHUB_WEBHOOK_SECRET}"    # for HMAC signature verification
+settings:
+  source: github                  # github | gitlab | bitbucket | pagerduty | generic
+  eventFilter:                    # only process these event types (empty = all)
+    - "workflow_run"
+    - "deployment_status"
+  severityMapping:                # map source-specific statuses to severity
+    completed.success: "info"
+    completed.failure: "critical"
+    in_progress: "info"
+ui:
+  icon: "webhook"
+  color: "#6366f1"
+  priority: 5
+```
+
+**Setup:** The user configures their external service to send webhooks to `http://localhost:19280/api/v1/webhooks/github`. For internet-accessible services (GitHub.com, GitLab.com), webhooks must point at a public URL — options include:
+- **For local development:** Use a tunnel service (ngrok, cloudflared) or configure webhooks at the repo level to use `localhost` (works if running CI locally).
+- **For self-hosted services** (GitHub Enterprise, GitLab self-managed): Point webhooks directly at `localhost:19280` if on the same machine or network.
+- **Recommendation:** For cloud-hosted services, prefer the **pull-based GitHub connector** (4.1.7) over webhooks. Webhooks are most useful for self-hosted instances or via tunnels.
+
 ---
 
 ### 4.2 Local API Server
@@ -407,8 +544,13 @@ DELETE /api/v1/events/{id}             # Dismiss/acknowledge
 
 POST /api/v1/actions/{connectorId}/{actionId}  # Trigger action
 
+POST /api/v1/webhooks/{source}         # Inbound webhooks (github, gitlab, bitbucket, pagerduty, generic)
+
 GET  /api/v1/connectors                # List connector statuses
 GET  /api/v1/health                    # App health check
+
+POST /api/v1/auth/{connectorId}/start  # Initiate OAuth flow for a connector
+GET  /api/v1/auth/{connectorId}/status # Check OAuth flow progress
 
 WS   /api/v1/ws                        # WebSocket for bidirectional real-time
 ```
@@ -1071,6 +1213,252 @@ export class NetworkReachabilityService {
 
 ---
 
+### 4.8 Authentication System
+
+iDashboard connectors need to authenticate against diverse external services. The auth system supports multiple strategies, from simple API keys to full OAuth2 flows, all managed from a single, consistent interface.
+
+#### Auth Strategy Overview
+
+| Strategy | How It Works | Used By | Secrets Storage |
+|----------|-------------|---------|-----------------|
+| **API Key** | Static key sent as header/query param | OctopusDeploy (`X-Octopus-ApiKey`), generic HTTP connectors | Electron `safeStorage` (macOS Keychain) |
+| **Bearer Token** | Static token in `Authorization: Bearer <token>` header | TeamCity, Graylog (access tokens), manually-supplied tokens | Electron `safeStorage` |
+| **Basic Auth** | Username:password encoded as Base64 in `Authorization: Basic <b64>` header | TeamCity (alternative), Graylog (token-as-username with literal password `token`) | Electron `safeStorage` |
+| **Personal Access Token (PAT)** | Service-specific long-lived token | GitHub (classic PAT or fine-grained PAT) | Electron `safeStorage` |
+| **OAuth2 Device Flow** | User visits URL in browser, enters code; app polls for token | GitHub (recommended for desktop apps) | Electron `safeStorage` + refresh token rotation |
+| **OAuth2 Authorization Code** | App opens browser, user authenticates, redirect captures code | Slack | Electron `safeStorage` + refresh token rotation |
+| **Webhook Secret** | Shared secret for HMAC signature verification of inbound payloads | Custom Webhook Receiver (GitHub, GitLab, PagerDuty webhooks) | Electron `safeStorage` |
+| **None** | No auth required | Push-only connectors (Claude Code hooks, generic push) | N/A |
+
+#### Auth Interface
+
+```typescript
+// src/shared/types.ts
+
+type AuthType = 'none' | 'apiKey' | 'bearer' | 'basic' | 'pat'
+             | 'oauth-device-flow' | 'oauth-authorization-code' | 'webhook-secret';
+
+interface AuthConfig {
+  type: AuthType;
+
+  // For static credentials (apiKey, bearer, pat, basic, webhook-secret):
+  // Value is an env var reference "${ENV_VAR}" resolved at runtime,
+  // or a safeStorage key reference "@keychain:connector-id/token"
+  token?: string;
+  username?: string;         // for basic auth
+  password?: string;         // for basic auth
+  secret?: string;           // for webhook-secret HMAC verification
+
+  // For apiKey: which header/param to send it in
+  headerName?: string;       // e.g. "X-Octopus-ApiKey"
+  paramName?: string;        // e.g. "api_key" (query parameter)
+
+  // For OAuth flows:
+  oauth?: OAuthConfig;
+}
+
+interface OAuthConfig {
+  clientId: string;
+  clientSecret?: string;     // stored in safeStorage, not config file
+  scopes: string[];          // e.g. ["repo", "read:org"] for GitHub
+  authorizeUrl?: string;     // override for self-hosted instances
+  tokenUrl?: string;         // override for self-hosted instances
+  deviceCodeUrl?: string;    // for device flow (e.g. GitHub)
+}
+```
+
+#### OAuth2 Device Flow (GitHub)
+
+The Device Flow is ideal for desktop apps — no redirect URI or local HTTP server needed. The user authenticates in their own browser, and the app polls for the token.
+
+**Flow:**
+
+```
+iDashboard                           GitHub                        User's Browser
+    │                                   │                              │
+    │ POST /login/device/code           │                              │
+    │ (client_id, scope)                │                              │
+    │──────────────────────────────────►│                              │
+    │                                   │                              │
+    │◄──────────────────────────────────│                              │
+    │ { device_code, user_code,         │                              │
+    │   verification_uri, interval }    │                              │
+    │                                   │                              │
+    │ Show to user:                     │                              │
+    │ "Visit github.com/login/device    │                              │
+    │  and enter code: ABCD-1234"       │                              │
+    │────────────────────────────────────────────────────────────────►│
+    │                                   │      User visits URL,        │
+    │                                   │      enters code, approves   │
+    │                                   │◄─────────────────────────────│
+    │ Poll: POST /login/oauth/          │                              │
+    │   access_token                    │                              │
+    │ (client_id, device_code,          │                              │
+    │  grant_type=device_code)          │                              │
+    │──────────────────────────────────►│                              │
+    │                                   │                              │
+    │◄──────────────────────────────────│                              │
+    │ { access_token, token_type,       │                              │
+    │   scope }                         │                              │
+    │                                   │                              │
+    │ Store token in safeStorage        │                              │
+    └───────────────────────────────────┘                              │
+```
+
+**Implementation:**
+
+```typescript
+// src/main/services/oauth-device-flow.ts
+
+interface DeviceCodeResponse {
+  device_code: string;
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;        // seconds until codes expire
+  interval: number;          // minimum polling interval in seconds
+}
+
+async function startDeviceFlow(config: OAuthConfig): Promise<DeviceCodeResponse> {
+  const resp = await fetch(config.deviceCodeUrl ?? 'https://github.com/login/device/code', {
+    method: 'POST',
+    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: config.clientId, scope: config.scopes.join(' ') }),
+  });
+  return resp.json();
+}
+
+async function pollForToken(
+  config: OAuthConfig,
+  deviceCode: string,
+  interval: number,
+  expiresIn: number,
+): Promise<string> {
+  const deadline = Date.now() + expiresIn * 1000;
+  let pollInterval = interval * 1000;
+
+  while (Date.now() < deadline) {
+    await sleep(pollInterval);
+    const resp = await fetch(config.tokenUrl ?? 'https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: config.clientId,
+        device_code: deviceCode,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      }),
+    });
+    const data = await resp.json();
+
+    if (data.access_token) return data.access_token;
+    if (data.error === 'slow_down') pollInterval += 5000;
+    if (data.error === 'expired_token') throw new Error('Device code expired');
+    // 'authorization_pending' → continue polling
+  }
+  throw new Error('Device flow timed out');
+}
+```
+
+**UX in iDashboard:**
+1. User clicks "Connect GitHub" in connector settings
+2. App initiates Device Flow, displays: *"Visit github.com/login/device and enter code: **ABCD-1234**"* with a copy button and "Open Browser" link
+3. App polls in background; UI shows a spinner
+4. On success: token stored in `safeStorage`, connector activates, UI shows green checkmark
+5. On expiry/failure: clear error message with "Try Again" button
+
+#### OAuth2 Authorization Code Flow (Slack)
+
+For Slack (and other services requiring Authorization Code flow), iDashboard opens the system browser for authentication and captures the callback via a temporary localhost HTTP server.
+
+**Flow:**
+
+```
+iDashboard                        User's Browser                     Slack
+    │                                   │                              │
+    │ Start temp HTTP server on         │                              │
+    │ localhost:{random_port}           │                              │
+    │                                   │                              │
+    │ shell.openExternal(               │                              │
+    │   slack.com/oauth/v2/authorize    │                              │
+    │   ?client_id=...                  │                              │
+    │   &scope=channels:history,...     │                              │
+    │   &redirect_uri=                  │                              │
+    │     localhost:{port}/callback)    │                              │
+    │──────────────────────────────────►│                              │
+    │                                   │  User approves in Slack UI   │
+    │                                   │─────────────────────────────►│
+    │                                   │                              │
+    │                                   │◄─────────────────────────────│
+    │                                   │  Redirect to                 │
+    │◄──────────────────────────────────│  localhost:{port}/callback   │
+    │  ?code=xoxo-...                   │  ?code=xoxo-...             │
+    │                                   │                              │
+    │ POST oauth.v2.access              │                              │
+    │ (code, client_id, client_secret,  │                              │
+    │  redirect_uri)                    │                              │
+    │─────────────────────────────────────────────────────────────────►│
+    │                                   │                              │
+    │◄─────────────────────────────────────────────────────────────────│
+    │ { access_token (xoxb-...),        │                              │
+    │   refresh_token, team, ... }      │                              │
+    │                                   │                              │
+    │ Store tokens in safeStorage       │                              │
+    │ Shut down temp HTTP server        │                              │
+    └───────────────────────────────────┘                              │
+```
+
+**Security considerations:**
+- The temporary localhost HTTP server only runs during the OAuth flow (seconds), then shuts down
+- `client_secret` is stored in `safeStorage`, never in config files
+- `state` parameter used for CSRF protection
+- Redirect URI uses a random high port to avoid conflicts
+- Token refresh handled automatically when Slack returns `token_expired` errors
+
+#### Token Lifecycle Management
+
+```typescript
+// src/main/services/auth-manager.ts
+
+export class AuthManager {
+  // Store a token securely (Electron safeStorage → macOS Keychain)
+  async storeToken(connectorId: string, key: string, value: string): Promise<void>;
+
+  // Retrieve a stored token
+  async getToken(connectorId: string, key: string): Promise<string | null>;
+
+  // Resolve an auth config to actual credentials (env vars, safeStorage, etc.)
+  async resolveCredentials(config: AuthConfig): Promise<ResolvedCredentials>;
+
+  // Refresh an OAuth token if expired
+  async refreshIfNeeded(connectorId: string): Promise<string>;
+
+  // Revoke and clear stored tokens (for disconnect/unlink)
+  async revokeToken(connectorId: string): Promise<void>;
+}
+```
+
+**Token refresh strategy:**
+- OAuth tokens are refreshed proactively when within 5 minutes of expiry
+- If refresh fails, the connector enters `auth-failed` state (distinct from network failure)
+- The UI shows a "Re-authenticate" button for `auth-failed` connectors
+- Static tokens (API keys, PATs, bearer tokens) don't expire in the app — auth failures surface as `auth-failed` health state
+
+#### Auth UI (Settings Panel)
+
+Each connector in the settings panel shows its auth status and provides auth-type-specific setup:
+
+| Auth Type | Settings UI |
+|-----------|-------------|
+| API Key / Bearer / PAT | Text input (masked) + "Test Connection" button. Value stored in safeStorage on save. |
+| Basic Auth | Username + password inputs (masked) + "Test Connection" button |
+| OAuth Device Flow | "Connect to GitHub" button → shows user code + verification URL → polling spinner → success/failure |
+| OAuth Auth Code | "Connect to Slack" button → opens browser → waiting spinner → success/failure |
+| Webhook Secret | Text input (masked) for the shared secret. Shows the webhook URL to configure in the external service. |
+| None | No auth section shown |
+
+All auth types show a connection status indicator: green checkmark (authenticated), yellow warning (token expiring soon), red X (auth failed / not configured).
+
+---
+
 ## 5. Claude Code Integration - Deep Dive
 
 This is the most novel and pressing use case, so it deserves detailed treatment.
@@ -1157,6 +1545,8 @@ iDashboard/
 │   │   │   │   ├── events.ts          # POST/GET/DELETE events
 │   │   │   │   ├── actions.ts         # Trigger connector actions
 │   │   │   │   ├── connectors.ts      # List connector statuses
+│   │   │   │   ├── webhooks.ts        # Inbound webhook receiver (signature verification + normalization)
+│   │   │   │   ├── auth.ts            # OAuth flow initiation + status endpoints
 │   │   │   │   └── health.ts          # Health check
 │   │   │   └── websocket.ts           # WebSocket handler
 │   │   │
@@ -1167,8 +1557,11 @@ iDashboard/
 │   │   │   ├── octopus-deploy.ts      # OctopusDeploy (pull)
 │   │   │   ├── teamcity.ts            # TeamCity (pull)
 │   │   │   ├── graylog.ts             # Graylog (pull)
+│   │   │   ├── github.ts             # GitHub Actions (pull, OAuth Device Flow)
+│   │   │   ├── slack.ts              # Slack (pull+push, OAuth Auth Code)
 │   │   │   ├── generic-http.ts        # Generic HTTP (pull)
-│   │   │   └── generic-push.ts        # Generic push handler
+│   │   │   ├── generic-push.ts        # Generic push handler
+│   │   │   └── webhook-receiver.ts    # Inbound webhook handler (GitHub/GitLab/etc.)
 │   │   │
 │   │   ├── db/                        # Database layer (SQLite)
 │   │   │   ├── connection.ts          # Database init, WAL mode, pragmas
@@ -1180,7 +1573,10 @@ iDashboard/
 │   │   │
 │   │   ├── services/                  # Cross-cutting main-process services
 │   │   │   ├── network-reachability.ts # Layered network detection (L0-L4)
-│   │   │   └── circuit-breaker.ts     # Per-connector circuit breaker + backoff
+│   │   │   ├── circuit-breaker.ts     # Per-connector circuit breaker + backoff
+│   │   │   ├── auth-manager.ts        # Token storage, retrieval, refresh lifecycle
+│   │   │   ├── oauth-device-flow.ts   # OAuth2 Device Flow (GitHub)
+│   │   │   └── oauth-auth-code.ts     # OAuth2 Authorization Code Flow (Slack)
 │   │   │
 │   │   ├── config/                    # Configuration loader
 │   │   │   ├── loader.ts              # YAML parsing, env substitution
@@ -1262,7 +1658,10 @@ iDashboard/
 │       ├── claude-code.example.yaml
 │       ├── teamcity.example.yaml
 │       ├── octopus-deploy.example.yaml
-│       └── graylog.example.yaml
+│       ├── graylog.example.yaml
+│       ├── github.example.yaml
+│       ├── slack.example.yaml
+│       └── webhook.example.yaml
 │
 ├── drizzle.config.ts                 # Drizzle Kit config (migration generation)
 │
@@ -1300,27 +1699,33 @@ iDashboard/
 
 **Deliverable:** User can install, configure Claude Code hooks, and see blinking notifications when Claude needs input. Window docks to a screen corner, surfaces temporarily on notification, hides after 30s. TeamCity build status visible. Events persist across app restarts. Connectors gracefully back off when endpoints are unreachable, with clear UI indicators (health dots, offline banner). All behavior configurable via `~/.idashboard/config.yaml`.
 
-### Phase 2: Connector Expansion + Data
+### Phase 2: Connector Expansion + Data + Auth
 
 1. **OctopusDeploy connector** - Full deployment monitoring
 2. **Graylog connector** - Alert monitoring, custom log queries
-3. **Generic HTTP connector** - User-configurable REST polling
-4. **Generic Push connector** - Accept arbitrary events via API
-5. **Network reachability (L2)** - DNS pre-checks per hostname, VPN-dependent connector flagging
-6. **Daily aggregate rollups** - Pre-computed trend data from raw events
-7. **Data retention** - Automatic purge of old events, configurable retention days
-8. **WebSocket support** - Real-time bidirectional communication
-9. **Sound notifications** - Configurable audio alerts
+3. **GitHub Actions connector** - Workflow run monitoring, PR check status, deployment approval alerts (pull-based)
+4. **Custom Webhook Receiver** - Inbound webhook endpoint with signature verification for GitHub, GitLab, Bitbucket, PagerDuty
+5. **Generic HTTP connector** - User-configurable REST polling
+6. **Generic Push connector** - Accept arbitrary events via API
+7. **Auth Manager + OAuth Device Flow** - Secure token storage (safeStorage/Keychain), env var resolution, GitHub OAuth Device Flow for browser-based auth
+8. **Network reachability (L2)** - DNS pre-checks per hostname, VPN-dependent connector flagging
+9. **Daily aggregate rollups** - Pre-computed trend data from raw events
+10. **Data retention** - Automatic purge of old events, configurable retention days
+11. **WebSocket support** - Real-time bidirectional communication
+12. **Sound notifications** - Configurable audio alerts
 
-### Phase 3: Rich UI + Analytics
+### Phase 3: Rich UI + Analytics + Slack
 
-1. **react-grid-layout integration** - Drag/resize widgets in expanded/fullscreen mode
-2. **Layout persistence** - Save/load widget layouts (stored in SQLite `kvCache`)
-3. **Settings UI** - In-app connector configuration editor (in fullscreen mode)
-4. **Event history timeline** - Scrollable event log with filters, queried from SQLite
-5. **Trend charts** - Build success rate, deploy frequency, alert trends (powered by daily aggregates)
-6. **Custom themes** - User-defined color schemes via theme YAML
-7. **Network diagnostics panel** - Detailed per-connector health view (latency, circuit state, failure layer)
+1. **Slack connector** - Channel monitoring with keyword filters, @mention alerts, OAuth Authorization Code flow for browser-based auth
+2. **OAuth Authorization Code Flow** - System-browser-based auth with localhost callback for Slack and future OAuth services
+3. **Token refresh lifecycle** - Proactive token refresh, auth-failed state, re-authenticate UI flow
+4. **react-grid-layout integration** - Drag/resize widgets in expanded/fullscreen mode
+5. **Layout persistence** - Save/load widget layouts (stored in SQLite `kvCache`)
+6. **Settings UI** - In-app connector configuration editor with auth-type-specific setup panels (fullscreen mode)
+7. **Event history timeline** - Scrollable event log with filters, queried from SQLite
+8. **Trend charts** - Build success rate, deploy frequency, alert trends (powered by daily aggregates)
+9. **Custom themes** - User-defined color schemes via theme YAML
+10. **Network diagnostics panel** - Detailed per-connector health view (latency, circuit state, failure layer)
 
 ### Phase 4: Advanced Features
 
@@ -1352,14 +1757,21 @@ iDashboard/
 | Styling | Tailwind + Container Queries | CSS Modules, styled-components | Rapid development, container queries for per-widget fluid adaptation |
 | Claude Code integration | Hooks → HTTP push | Process monitoring, PTY sniffing | Official supported mechanism, clean separation |
 | Connector flexibility | Auto-discovery + Generic HTTP + Generic Push | Formal plugin SDK | Low barrier to add connectors: drop a file or write YAML. Formal SDK deferred to Phase 4. |
+| OAuth for GitHub | Device Flow | Authorization Code, PAT-only | Device Flow is GitHub's recommended approach for desktop/CLI apps. No redirect URI needed, user authenticates in their own browser. PAT remains as simpler alternative. |
+| OAuth for Slack | Authorization Code + localhost callback | Manual token entry only | Slack requires OAuth for bot tokens. Temp localhost HTTP server captures redirect. `client_secret` stays in safeStorage. Manual token entry as fallback. |
+| Webhook verification | HMAC signature validation per source | Trust all inbound, IP allowlist | HMAC-SHA256 signatures are the standard across GitHub/GitLab/PagerDuty. Per-source parsers normalize diverse payload formats. |
 
 ---
 
 ## 9. Security Considerations
 
 - **Local API binds to 127.0.0.1 only** - Never exposed to network
-- **No secrets in config files** - All auth tokens via `${ENV_VAR}` references
+- **No secrets in config files** - All auth tokens via `${ENV_VAR}` references or `safeStorage` keychain refs
 - **Secrets encrypted at rest** - API tokens stored via Electron `safeStorage` (macOS Keychain). Never written to disk in plaintext.
+- **OAuth client_secret in safeStorage** - OAuth client secrets are stored in safeStorage, never in YAML config files. Only `client_id` appears in config.
+- **OAuth state parameter for CSRF** - Authorization Code flow uses a random `state` parameter to prevent CSRF attacks during the redirect
+- **Temporary localhost server for OAuth** - The localhost HTTP server for OAuth callbacks runs only during the auth flow (seconds), then shuts down immediately
+- **Webhook signature verification** - All inbound webhooks are verified via HMAC-SHA256 (or source-specific) signatures before processing. Unverified payloads are rejected.
 - **Optional API authentication** - Bearer token for local API if desired
 - **Rate limiting** - Prevent runaway scripts from flooding events
 - **No eval/exec of user input** - Event data is sanitized before rendering
@@ -1373,13 +1785,15 @@ iDashboard/
 
 | Layer | Tool | Coverage |
 |-------|------|----------|
-| Connector logic | Vitest | Each connector's poll/normalize logic with mocked HTTP |
+| Connector logic | Vitest | Each connector's poll/normalize logic with mocked HTTP (including GitHub, Slack) |
 | State management | Vitest | Store actions, event lifecycle, TTL expiry |
-| API routes | Vitest + Supertest | All endpoints, validation, error handling |
+| API routes | Vitest + Supertest | All endpoints, validation, error handling, webhook signature verification |
 | Database | Vitest | Event insert/query/purge, aggregate rollup, retention, schema migrations (in-memory SQLite) |
 | Circuit breaker | Vitest | State transitions (closed→open→half-open→closed), backoff calculation, jitter |
 | Network reachability | Vitest | VPN interface detection, DNS mock, overall state computation |
-| UI components | Vitest + React Testing Library | Fluid sizing, widget rendering, animations, health indicators |
+| Auth flows | Vitest | Device Flow polling, Auth Code exchange, token refresh, safeStorage mock, credential resolution |
+| Webhook receiver | Vitest | HMAC signature verification per source, payload parsing/normalization, reject invalid signatures |
+| UI components | Vitest + React Testing Library | Fluid sizing, widget rendering, animations, health indicators, auth setup panels |
 | E2E flows | Playwright for Electron | Full flow: push event → DB persist → UI update → action execution |
 | Config parsing | Vitest | YAML loading, env substitution, schema validation |
 
@@ -1387,19 +1801,20 @@ iDashboard/
 
 ## 11. Future Connector Ideas
 
-Beyond Phase 1-2, the connector system can expand to:
+Beyond Phase 1-3 (which cover Claude Code, TeamCity, OctopusDeploy, Graylog, GitHub Actions, Slack, Custom Webhooks, Generic HTTP, and Generic Push), the connector system can expand to:
 
 | Connector | Direction | Purpose |
 |-----------|-----------|---------|
-| GitHub Actions | Pull | Workflow run status, PR checks |
 | Jenkins | Pull | Build pipeline monitoring |
 | Docker/K8s | Pull | Container health, pod status |
-| PagerDuty | Pull+Push | Incident awareness |
-| Slack | Push | Forward specific Slack messages to dashboard |
-| Custom Webhook | Push | Generic webhook receiver (GitHub, GitLab, etc.) |
+| PagerDuty | Pull+Push | Incident awareness (also receivable via Webhook Receiver) |
 | Prometheus/Grafana | Pull | Metric threshold alerts |
 | AWS CloudWatch | Pull | AWS resource alerts |
+| GitLab CI | Pull | Pipeline/merge request monitoring (also receivable via Webhook Receiver) |
+| Jira | Pull | Issue status changes, sprint progress |
+| Datadog | Pull | Monitor alerts, APM status |
 | Process Monitor | Pull | Local process CPU/memory watching |
+| Linear | Pull | Issue tracking, cycle updates |
 
 ---
 
@@ -1420,3 +1835,6 @@ Remaining open questions:
 2. **Multi-user** - Will this ever need to aggregate data from multiple developers, or is it strictly a personal tool?
 3. **Notification sounds** - Default system sounds, or bundled custom sounds?
 4. **Config file location** - `~/.idashboard/` (XDG-style) or `~/.config/idashboard/` (Linux convention) or alongside the app?
+5. **GitHub App vs. OAuth App** - For GitHub OAuth Device Flow, should we register as a GitHub App (more granular permissions, recommended by GitHub) or an OAuth App (simpler setup)? GitHub Apps are recommended for new integrations.
+6. **Slack Socket Mode** - Should Phase 3 Slack connector default to polling or Socket Mode (real-time WebSocket)? Socket Mode requires an app-level token (`xapp-*`) and is more complex to set up, but eliminates polling latency.
+7. **Webhook tunnel recommendation** - For cloud-hosted webhooks (GitHub.com → localhost), should iDashboard bundle/recommend a tunnel service (cloudflared, ngrok), or leave it to the user?
