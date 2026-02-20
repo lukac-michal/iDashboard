@@ -116,7 +116,52 @@ macOS has several tools in the overlay/widget space. None fully satisfy the requ
 | IPC (main↔renderer) | Electron IPC with typed channels |
 | Configuration | YAML files (`js-yaml`) for human-editable connector configs |
 
-### 3.4 Build & Dev Tooling
+### 3.4 Local Storage: **better-sqlite3 + Drizzle ORM**
+
+**Decision rationale:** Evaluated 6 options — better-sqlite3 is the clear winner for this use case.
+
+| Option | Verdict | Why Not |
+|--------|---------|---------|
+| **better-sqlite3** | **CHOSEN** | Fast sync API (30-40k inserts/sec), WAL mode, mature Electron support, Drizzle ORM type safety |
+| sql.js (WASM) | Rejected | Entire DB must fit in memory, 3-5x slower than native, sql.js docs explicitly recommend against Electron use |
+| LevelDB / RocksDB | Rejected | Key-value only — no SQL queries for time-series aggregation. Same native-module packaging pain as SQLite, none of the query power |
+| NeDB / LokiJS | Rejected | **Both abandoned** (NeDB: 2016, LokiJS: unmaintained). In-memory with JSON persistence can't handle 50k events/day |
+| DuckDB | Rejected | 8-10x slower single-row inserts, 30-50MB binary (vs 2-4MB SQLite), Node.js API still in transition |
+| Flat files / electron-store | Rejected | No query engine. Fine for preferences, not for time-series data |
+
+**Complementary storage:**
+
+| Data Type | Storage | Rationale |
+|-----------|---------|-----------|
+| Time-series events, connector state, aggregates | **better-sqlite3** (SQLite WAL) | Fast inserts, indexed range queries, SQL aggregations |
+| API tokens / secrets | **Electron safeStorage** | OS-level encryption via macOS Keychain |
+| User preferences (non-sensitive) | **electron-store** | Simple JSON, follows OS conventions |
+
+**Key configuration for performance:**
+
+```sql
+PRAGMA journal_mode = WAL;          -- Concurrent reads during writes
+PRAGMA synchronous = NORMAL;        -- Safe with WAL, much faster than FULL
+PRAGMA cache_size = -64000;         -- 64MB cache for hot index pages
+PRAGMA mmap_size = 268435456;       -- 256MB memory-mapped I/O
+PRAGMA foreign_keys = ON;
+```
+
+### 3.5 Network Reachability: **Layered Detection**
+
+Network reachability uses a 5-layer detection strategy, from cheapest to most authoritative:
+
+| Layer | Mechanism | Detects | Latency | When Used |
+|-------|-----------|---------|---------|-----------|
+| **L0: Interface** | `Electron net.isOnline()` + events | Wi-Fi off, cable unplugged | 0ms (event-driven) | Always — gate for all polling |
+| **L1: VPN Heuristic** | `os.networkInterfaces()` → utun/tun detection | VPN connected/disconnected | <1ms | Every 30s + on network change |
+| **L2: DNS** | `dns.resolve()` per hostname | DNS failure, split-tunnel VPN issues | 1-50ms | Before HTTP, on-demand |
+| **L3: HTTP Health** | Actual `poll()` call or `HEAD /health` | Application-layer failures, auth issues | 50-500ms | Normal polling cycle |
+| **L4: Health Tracking** | Circuit breaker + exponential backoff | Aggregate per-connector health | N/A (meta) | Always — wraps L0-L3 |
+
+No native macOS addons required — `os.networkInterfaces()` + DNS resolution provides sufficient VPN detection without Objective-C++.
+
+### 3.6 Build & Dev Tooling
 
 | Tool | Purpose |
 |------|---------|
@@ -126,6 +171,8 @@ macOS has several tools in the overlay/widget space. None fully satisfy the requ
 | **Vitest** | Unit testing |
 | **Playwright** | E2E testing for Electron |
 | **ESLint + Prettier** | Code quality |
+| **Drizzle ORM + drizzle-kit** | Type-safe SQLite queries + schema migrations |
+| **@electron/rebuild** | Native module (better-sqlite3) compilation for Electron |
 
 ---
 
@@ -655,6 +702,23 @@ notifications:
   nativeNotification: true        # also show macOS Notification Center notification
   trayIconBadge: true             # show unread count badge on tray icon
 
+# ─── Storage ──────────────────────────────────────────────────────
+storage:
+  retentionDays: 30               # days to keep raw events (older events purged)
+  aggregateRetentionDays: 90      # days to keep daily aggregates for trend charts
+  vacuumIntervalHours: 168        # run VACUUM weekly (hours). 0 = never auto-vacuum
+  maxDbSizeMB: 1024               # warn if DB exceeds this size (advisory, not enforced)
+
+# ─── Network Reachability ─────────────────────────────────────────
+network:
+  vpnInterfaceCheckIntervalSec: 30  # how often to check os.networkInterfaces() for VPN
+  dnsCheckTimeoutMs: 3000           # timeout for DNS resolve checks
+  circuitBreaker:
+    failureThreshold: 5             # consecutive failures before opening circuit
+    halfOpenRetryMs: 30000          # ms before trying a real poll in half-open state
+    maxBackoffMs: 300000            # max backoff interval (5 minutes)
+    backoffJitter: 0.3              # +/- 30% random jitter on backoff
+
 # ─── Startup ───────────────────────────────────────────────────────
 startup:
   launchAtLogin: false            # register as login item
@@ -682,6 +746,7 @@ settings:
     - "MyProject_Deploy"
   failureThreshold: 2             # alert after N consecutive failures
   queueDepthWarning: 5            # warn if queue exceeds this
+  requiresVpn: true               # mark this connector as VPN-dependent (affects reachability UI)
 
 ui:
   icon: "hammer"
@@ -697,6 +762,312 @@ ui:
     showHistory: 400
     historyCount: 5
 ```
+
+---
+
+### 4.6 Data Persistence (SQLite)
+
+All event data, connector state, and computed aggregates are stored in a single SQLite database file at `{userData}/idashboard.db`. The database uses WAL mode for concurrent read/write performance.
+
+#### Database Schema (Drizzle ORM)
+
+```typescript
+// src/main/db/schema.ts
+import { sqliteTable, text, integer, real, index } from 'drizzle-orm/sqlite-core';
+
+// ─── Core Event Store ────────────────────────────────────────────────
+// All time-series events: builds, deploys, CI results, alerts, push notifications
+export const events = sqliteTable('events', {
+  id:          integer('id').primaryKey({ autoIncrement: true }),
+  timestamp:   integer('timestamp').notNull(),           // Unix epoch ms
+  connectorId: text('connector_id').notNull(),           // source connector
+  category:    text('category').notNull(),               // 'build' | 'deploy' | 'alert' | 'notification'
+  eventType:   text('event_type').notNull(),             // 'build.succeeded' | 'deploy.failed' etc.
+  severity:    text('severity').notNull(),               // 'info' | 'warning' | 'error' | 'critical' | 'attention'
+  status:      text('status'),                           // 'success' | 'failure' | 'in_progress' | 'cancelled'
+  durationMs:  integer('duration_ms'),                   // for builds, deploys
+  title:       text('title').notNull(),                  // human-readable summary
+  body:        text('body'),                             // detailed message
+  metadata:    text('metadata', { mode: 'json' }),       // flexible JSON payload
+  sourceUrl:   text('source_url'),                       // link to source system
+  externalId:  text('external_id'),                      // dedupe key from source
+  dismissed:   integer('dismissed', { mode: 'boolean' }).default(false),
+  expiresAt:   integer('expires_at'),                    // auto-expire timestamp (null = no expiry)
+}, (table) => [
+  index('idx_events_connector_time').on(table.connectorId, table.timestamp),
+  index('idx_events_severity_time').on(table.severity, table.timestamp),
+  index('idx_events_category_status_time').on(table.category, table.status, table.timestamp),
+  index('idx_events_external_id').on(table.externalId),
+]);
+
+// ─── Connector State ─────────────────────────────────────────────────
+// Runtime state persisted across restarts: last poll cursor, error counts, health
+export const connectorState = sqliteTable('connector_state', {
+  connectorId:  text('connector_id').primaryKey(),
+  lastPollAt:   integer('last_poll_at'),
+  lastEventAt:  integer('last_event_at'),
+  errorCount:   integer('error_count').default(0),
+  lastError:    text('last_error'),
+  healthStatus: text('health_status').default('healthy'), // 'healthy' | 'degraded' | 'error' | 'disabled'
+  circuitState: text('circuit_state').default('closed'),  // 'closed' | 'open' | 'half-open'
+  backoffMs:    integer('backoff_ms').default(0),
+  pollState:    text('poll_state', { mode: 'json' }),     // connector-specific cursor/pagination
+  updatedAt:    integer('updated_at'),
+});
+
+// ─── Daily Aggregates (Materialized for Trend Charts) ────────────────
+// Pre-computed daily rollups. Query 30 rows instead of scanning 1.5M events.
+export const dailyAggregates = sqliteTable('daily_aggregates', {
+  id:            integer('id').primaryKey({ autoIncrement: true }),
+  dayKey:        integer('day_key').notNull(),            // YYYYMMDD as integer
+  connectorId:   text('connector_id').notNull(),
+  category:      text('category').notNull(),
+  eventType:     text('event_type').notNull(),
+  totalCount:    integer('total_count').default(0),
+  successCount:  integer('success_count').default(0),
+  failureCount:  integer('failure_count').default(0),
+  avgDurationMs: real('avg_duration_ms'),
+  p95DurationMs: real('p95_duration_ms'),
+  maxDurationMs: integer('max_duration_ms'),
+}, (table) => [
+  index('idx_daily_agg_connector_day').on(table.connectorId, table.dayKey),
+  index('idx_daily_agg_category_type_day').on(table.category, table.eventType, table.dayKey),
+]);
+
+// ─── Key-Value Cache ─────────────────────────────────────────────────
+// Dashboard layout cache, window position, misc persisted state
+export const kvCache = sqliteTable('kv_cache', {
+  key:       text('key').primaryKey(),
+  value:     text('value', { mode: 'json' }).notNull(),
+  updatedAt: integer('updated_at').notNull(),
+  expiresAt: integer('expires_at'),                      // null = no expiry
+});
+```
+
+#### Database Initialization
+
+```typescript
+// src/main/db/connection.ts
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { app } from 'electron';
+import path from 'node:path';
+import * as schema from './schema';
+
+export function createDatabase() {
+  const dbPath = path.join(app.getPath('userData'), 'idashboard.db');
+  const sqlite = new Database(dbPath);
+
+  sqlite.pragma('journal_mode = WAL');
+  sqlite.pragma('synchronous = NORMAL');
+  sqlite.pragma('cache_size = -64000');       // 64MB
+  sqlite.pragma('mmap_size = 268435456');     // 256MB
+  sqlite.pragma('foreign_keys = ON');
+
+  return drizzle(sqlite, { schema });
+}
+```
+
+#### Data Retention & Maintenance
+
+- **Daily job** (runs at app start + every 24h): purge raw events older than `storage.retentionDays` (default: 30)
+- **Weekly job**: purge daily aggregates older than `storage.aggregateRetentionDays` (default: 90)
+- **Weekly VACUUM**: reclaim disk space (configurable via `storage.vacuumIntervalHours`)
+- **Aggregate rollup**: on each event insert, upsert into `dailyAggregates` for the current day. This means trend charts always query pre-computed rows (<1ms) instead of scanning raw events
+
+#### Estimated Disk Usage
+
+| Scale | Raw Events | With Indexes | Daily Aggregates |
+|-------|-----------|--------------|-----------------|
+| Light (5k events/day, 30 days) | ~50 MB | ~70 MB | ~5 KB |
+| Medium (50k events/day, 30 days) | ~450 MB | ~600 MB | ~50 KB |
+| Heavy (200k events/day, 30 days) | ~1.8 GB | ~2.4 GB | ~200 KB |
+
+For the medium case (50k/day), keeping only 7 days of raw events + 30 days of aggregates drops storage to ~150 MB while preserving full trend visibility.
+
+#### Schema Migrations
+
+Drizzle Kit generates migration SQL files at build time (`drizzle-kit generate`). At app startup, the migration runner applies pending migrations sequentially. SQLite's limited `ALTER TABLE` means some migrations require the create-new-table → copy-data → drop-old → rename pattern, which Drizzle handles automatically.
+
+---
+
+### 4.7 Network Reachability & Health Monitoring
+
+iDashboard must gracefully handle network failures — the user may be offline, on flaky Wi-Fi, or disconnected from VPN. The system uses a layered detection strategy that avoids hammering down endpoints and clearly communicates status to the user.
+
+#### Layered Detection Architecture
+
+```
+Layer 0: Interface Check ──── net.isOnline() / events ────────── 0ms (push)
+  │ If offline → pause ALL connectors, show "Offline" banner
+  │
+Layer 1: VPN Heuristic ────── os.networkInterfaces() ─────────── <1ms (poll 30s)
+  │ If VPN interfaces disappeared → flag VPN-dependent connectors
+  │
+Layer 2: DNS Reachability ──── dns.resolve() per hostname ─────── 1-50ms (on-demand)
+  │ If DNS fails → skip HTTP, report "dns-failed"
+  │
+Layer 3: HTTP Health ────────── Actual poll() / HEAD request ──── 50-500ms (normal cycle)
+  │ This is what connectors already do — just track results
+  │
+Layer 4: Health Tracking ────── Circuit breaker + backoff ─────── meta-layer
+    Aggregates L0-L3 into per-connector health state
+    Manages exponential backoff, circuit state, retry timing
+```
+
+#### Types
+
+```typescript
+// Added to src/shared/types.ts
+
+export type ReachabilityState =
+  | 'online'              // All checks passing
+  | 'degraded'            // Some connectors failing
+  | 'vpn-disconnected'    // VPN interfaces missing, internal endpoints unreachable
+  | 'offline';            // net.isOnline() === false
+
+export type EndpointReachability =
+  | 'reachable'           // Last poll succeeded
+  | 'dns-failed'          // Can't resolve hostname
+  | 'tcp-failed'          // Can't connect to host:port
+  | 'http-failed'         // Connected but HTTP error (5xx, timeout)
+  | 'auth-failed'         // 401/403 — credentials issue, not network
+  | 'unknown';            // Not yet checked
+
+export type CircuitState = 'closed' | 'open' | 'half-open';
+
+export interface ConnectorHealth {
+  reachability: EndpointReachability;
+  circuitState: CircuitState;
+  consecutiveFailures: number;
+  lastSuccessAt?: number;
+  lastFailureAt?: number;
+  lastError?: string;
+  currentBackoffMs: number;
+  nextPollAt?: number;
+  latencyMs?: number;          // last successful response time
+  requiresVpn: boolean;        // from connector config
+}
+```
+
+#### Circuit Breaker State Machine
+
+```
+           poll succeeds
+  CLOSED ─────────────────► CLOSED (reset failures, reset backoff)
+    │
+    │ poll fails (failures < threshold)
+    ▼
+  CLOSED (increment failures, increase backoff)
+    │
+    │ failures >= threshold (default: 5)
+    ▼
+  OPEN ──── DNS probe ──── fails ──► OPEN (stay, increase backoff)
+    │
+    │ DNS probe succeeds
+    ▼
+  HALF-OPEN ──── real poll ──── fails ──► OPEN (longer backoff)
+    │
+    │ poll succeeds
+    ▼
+  CLOSED (reset everything, resume normal interval)
+```
+
+**Backoff formula:** `nextBackoff = min(current * 2, maxBackoffMs) * (1 ± jitter)`
+
+Default: 5s → 10s → 20s → 40s → 80s → 160s → 300s (cap). Jitter ±30%.
+
+#### VPN Detection
+
+VPN detection uses `os.networkInterfaces()` to detect tunnel interfaces, without native macOS addons:
+
+```typescript
+function detectVpnInterfaces(): boolean {
+  const interfaces = os.networkInterfaces();
+  return Object.entries(interfaces).some(([name, addrs]) => {
+    if (!addrs) return false;
+    // utun* = macOS VPN, tun* = OpenVPN/WireGuard, ppp* = L2TP
+    if (!/^(utun|tun|ppp|ipsec|tap)\d*$/.test(name)) return false;
+    // Filter out macOS system utun (iCloud relay, Continuity) by checking for routable IPv4
+    return addrs.some(a => a.family === 'IPv4' && !a.internal && !a.address.startsWith('169.254.'));
+  });
+}
+```
+
+**Caveat:** Not all `utun` interfaces are VPNs (macOS uses them for iCloud relay). The heuristic filters by "has a routable IPv4 address" which catches most real VPNs. For connectors marked `requiresVpn: true`, a DNS resolve of the endpoint hostname provides the definitive check.
+
+#### NetworkReachabilityService (Main Process)
+
+```typescript
+// src/main/services/network-reachability.ts
+export class NetworkReachabilityService {
+  private _isSystemOnline = true;
+  private _vpnDetected = false;
+
+  initialize(): void {
+    // Layer 0: System online/offline (event-driven, instant)
+    this._isSystemOnline = net.isOnline();
+    net.on('online', () => { this._isSystemOnline = true; this.onNetworkChange(); });
+    net.on('offline', () => { this._isSystemOnline = false; this.onNetworkChange(); });
+
+    // Layer 1: VPN heuristic (poll every 30s — os.networkInterfaces() is <1ms)
+    this.checkVpnInterfaces();
+    setInterval(() => this.checkVpnInterfaces(), 30_000);
+  }
+
+  // Layer 2: DNS check for a specific hostname
+  async checkDns(hostname: string, timeoutMs = 3000): Promise<boolean> {
+    return new Promise(resolve => {
+      const timer = setTimeout(() => resolve(false), timeoutMs);
+      dns.resolve(hostname, err => { clearTimeout(timer); resolve(!err); });
+    });
+  }
+
+  // Computed overall state
+  getOverallState(connectorHealths: Map<string, ConnectorHealth>): ReachabilityState {
+    if (!this._isSystemOnline) return 'offline';
+    const vpnRequired = [...connectorHealths.values()].filter(h => h.requiresVpn);
+    if (!this._vpnDetected && vpnRequired.some(h => h.reachability !== 'reachable'))
+      return 'vpn-disconnected';
+    if ([...connectorHealths.values()].some(h => h.circuitState === 'open'))
+      return 'degraded';
+    return 'online';
+  }
+}
+```
+
+#### UI Presentation
+
+**Global status bar** (thin strip at top of dashboard):
+
+| State | Visual | Behavior |
+|-------|--------|----------|
+| **Online** | Hidden — no bar shown | Don't show "online" status — it's visual noise |
+| **Degraded** | Amber bar: "2 services unreachable" | Click to expand affected connectors |
+| **VPN Disconnected** | Orange bar: "VPN required for TeamCity, Grafana" | Shows which connectors need VPN |
+| **Offline** | Red bar: "Network disconnected — polling paused" | Cloud-off icon + text |
+
+**Per-connector health indicator** (small dot on each widget):
+
+| State | Visual | Tooltip |
+|-------|--------|---------|
+| Healthy | Green dot (or hidden) | "Last poll: 5s ago" |
+| Backing off (1-4 failures) | Yellow dot | "Retrying in 20s (2 failures)" |
+| Circuit open (5+ failures) | Red dot | "Unreachable — retrying in 2m" |
+| VPN required | Orange dot | "VPN required — connect VPN to reach TeamCity" |
+| Auth failed | Red key icon | "Authentication failed — check credentials" |
+
+**Connector detail view** (expanded widget):
+- Last successful poll time (relative: "2 min ago")
+- Circuit state + consecutive failure count
+- Next retry countdown
+- Response latency (last N successful polls)
+- Failure layer (DNS / HTTP / Auth) for targeted troubleshooting
+
+**Tray icon** encodes aggregate status:
+- Normal icon: all healthy
+- Icon with amber badge: some connectors degraded
+- Grayed icon: system offline
 
 ---
 
@@ -799,6 +1170,18 @@ iDashboard/
 │   │   │   ├── generic-http.ts        # Generic HTTP (pull)
 │   │   │   └── generic-push.ts        # Generic push handler
 │   │   │
+│   │   ├── db/                        # Database layer (SQLite)
+│   │   │   ├── connection.ts          # Database init, WAL mode, pragmas
+│   │   │   ├── schema.ts             # Drizzle ORM schema (events, connectorState, dailyAggregates, kvCache)
+│   │   │   ├── migrations/            # Auto-generated migration SQL files (drizzle-kit)
+│   │   │   ├── event-store.ts         # Insert/query/purge events, deduplication
+│   │   │   ├── aggregator.ts          # Daily aggregate rollup logic
+│   │   │   └── maintenance.ts         # Retention purge, VACUUM scheduling
+│   │   │
+│   │   ├── services/                  # Cross-cutting main-process services
+│   │   │   ├── network-reachability.ts # Layered network detection (L0-L4)
+│   │   │   └── circuit-breaker.ts     # Per-connector circuit breaker + backoff
+│   │   │
 │   │   ├── config/                    # Configuration loader
 │   │   │   ├── loader.ts              # YAML parsing, env substitution
 │   │   │   ├── schema.ts              # Config validation schemas (Zod)
@@ -819,7 +1202,8 @@ iDashboard/
 │   │   ├── store/                     # Zustand state management
 │   │   │   ├── dashboard.ts           # Main dashboard store
 │   │   │   ├── events.ts              # Event state slice
-│   │   │   └── layout.ts             # Layout/UI state slice
+│   │   │   ├── layout.ts             # Layout/UI state slice
+│   │   │   └── network.ts            # Network reachability + connector health state
 │   │   │
 │   │   ├── components/
 │   │   │   ├── layout/
@@ -845,7 +1229,9 @@ iDashboard/
 │   │   │   │   ├── BlinkingIcon.tsx   # Attention animation
 │   │   │   │   ├── SeverityBadge.tsx
 │   │   │   │   ├── ActionButton.tsx
-│   │   │   │   └── EventTimeline.tsx
+│   │   │   │   ├── EventTimeline.tsx
+│   │   │   │   ├── NetworkStatusBar.tsx # Global online/offline/degraded/VPN banner
+│   │   │   │   └── HealthDot.tsx      # Per-connector health indicator dot
 │   │   │   │
 │   │   │   └── settings/              # Settings UI (expanded tier)
 │   │   │       ├── ConnectorConfig.tsx
@@ -855,7 +1241,8 @@ iDashboard/
 │   │   ├── hooks/
 │   │   │   ├── useSizeTier.ts         # Window size → tier mapping
 │   │   │   ├── useConnectorEvents.ts  # Subscribe to connector events
-│   │   │   └── useBlinkAnimation.ts   # Blink timing logic
+│   │   │   ├── useBlinkAnimation.ts   # Blink timing logic
+│   │   │   └── useNetworkStatus.ts    # Subscribe to network reachability state
 │   │   │
 │   │   └── styles/
 │   │       ├── globals.css            # Tailwind + base styles
@@ -877,10 +1264,15 @@ iDashboard/
 │       ├── octopus-deploy.example.yaml
 │       └── graylog.example.yaml
 │
+├── drizzle.config.ts                 # Drizzle Kit config (migration generation)
+│
 └── tests/
     ├── unit/
     │   ├── connectors/
-    │   └── store/
+    │   ├── store/
+    │   ├── db/                        # Event store, aggregator, retention
+    │   ├── services/                  # Circuit breaker, network reachability
+    │   └── config/
     └── e2e/
 ```
 
@@ -890,37 +1282,45 @@ iDashboard/
 
 ### Phase 1: Foundation (MVP)
 
-**Goal:** Working app with Claude Code attention notifications + one pull connector.
+**Goal:** Working app with Claude Code attention notifications + one pull connector + persistent storage + network health.
 
 1. **Electron shell** - Window management, system tray, free-form resizing
 2. **Docking system** - Snap to screen edges/corners, configurable offset
 3. **Temporary always-on-top** - Surface on notification, auto-hide after configurable duration, flash count
 4. **Local API server** - Fastify on localhost, `POST /events` endpoint
-5. **Event bus + Zustand store** - Core reactive state
-6. **Adaptive UI skeleton** - Fluid sizing with CSS container queries, ResizeObserver-driven layout
-7. **Claude Code connector** - Push via hooks, blinking notification, focus-terminal action
-8. **TeamCity connector** - Pull via REST API, build status display
-9. **Configuration system** - YAML config loader, hot-reload, env variable substitution, Zod validation
-10. **Basic theming** - Dark mode default
+5. **SQLite database** - better-sqlite3 + Drizzle ORM, WAL mode, schema migrations, event store + connector state tables
+6. **Event bus + Zustand store** - Core reactive state, synced from SQLite via IPC
+7. **Network reachability (L0+L1)** - `net.isOnline()` event-driven detection + VPN interface heuristic via `os.networkInterfaces()`. Global offline banner in UI.
+8. **Circuit breaker + backoff** - Per-connector health tracking, exponential backoff on failure, circuit state machine
+9. **Adaptive UI skeleton** - Fluid sizing with CSS container queries, ResizeObserver-driven layout
+10. **Claude Code connector** - Push via hooks, blinking notification, focus-terminal action
+11. **TeamCity connector** - Pull via REST API, build status display
+12. **Configuration system** - YAML config loader, hot-reload, env variable substitution, Zod validation
+13. **Basic theming** - Dark mode default
 
-**Deliverable:** User can install, configure Claude Code hooks, and see blinking notifications when Claude needs input. Window docks to a screen corner, surfaces temporarily on notification, hides after 30s. TeamCity build status visible. All behavior configurable via `~/.idashboard/config.yaml`.
+**Deliverable:** User can install, configure Claude Code hooks, and see blinking notifications when Claude needs input. Window docks to a screen corner, surfaces temporarily on notification, hides after 30s. TeamCity build status visible. Events persist across app restarts. Connectors gracefully back off when endpoints are unreachable, with clear UI indicators (health dots, offline banner). All behavior configurable via `~/.idashboard/config.yaml`.
 
-### Phase 2: Connector Expansion
+### Phase 2: Connector Expansion + Data
 
 1. **OctopusDeploy connector** - Full deployment monitoring
 2. **Graylog connector** - Alert monitoring, custom log queries
 3. **Generic HTTP connector** - User-configurable REST polling
 4. **Generic Push connector** - Accept arbitrary events via API
-5. **WebSocket support** - Real-time bidirectional communication
-6. **Sound notifications** - Configurable audio alerts
+5. **Network reachability (L2)** - DNS pre-checks per hostname, VPN-dependent connector flagging
+6. **Daily aggregate rollups** - Pre-computed trend data from raw events
+7. **Data retention** - Automatic purge of old events, configurable retention days
+8. **WebSocket support** - Real-time bidirectional communication
+9. **Sound notifications** - Configurable audio alerts
 
-### Phase 3: Rich UI
+### Phase 3: Rich UI + Analytics
 
 1. **react-grid-layout integration** - Drag/resize widgets in expanded/fullscreen mode
-2. **Layout persistence** - Save/load widget layouts as YAML
+2. **Layout persistence** - Save/load widget layouts (stored in SQLite `kvCache`)
 3. **Settings UI** - In-app connector configuration editor (in fullscreen mode)
-4. **Event history timeline** - Scrollable event log with filters
-5. **Custom themes** - User-defined color schemes via theme YAML
+4. **Event history timeline** - Scrollable event log with filters, queried from SQLite
+5. **Trend charts** - Build success rate, deploy frequency, alert trends (powered by daily aggregates)
+6. **Custom themes** - User-defined color schemes via theme YAML
+7. **Network diagnostics panel** - Detailed per-connector health view (latency, circuit state, failure layer)
 
 ### Phase 4: Advanced Features
 
@@ -930,6 +1330,7 @@ iDashboard/
 4. **Multi-monitor support** - Pin to specific display
 5. **CLI tool** - `idashboard push "message"` from any script
 6. **Auto-updater** - Electron auto-update integration
+7. **Data export** - Export event history as CSV/JSON for external analysis
 
 ---
 
@@ -942,6 +1343,10 @@ iDashboard/
 | State management | Zustand | Redux, MobX, Jotai | Minimal boilerplate, great TS support, easy IPC sync |
 | Config format | YAML | JSON, TOML | Human-readable, supports comments, familiar to DevOps. Hot-reload via `fs.watch()`. |
 | Config scope | Everything configurable | Hardcoded defaults | User requirement: nothing set in stone. Every behavioral parameter has a config key with sensible defaults. |
+| Local storage | better-sqlite3 + Drizzle ORM | sql.js (WASM), DuckDB, LevelDB, NeDB | Native SQLite: 30-40k inserts/sec, WAL mode, 2-4MB binary, mature Electron support. Drizzle adds type-safe queries + migrations. DuckDB too slow for inserts, too large. NeDB/LokiJS abandoned. |
+| Secrets storage | Electron safeStorage | Plaintext in config, custom encryption | OS-level encryption (macOS Keychain). Zero custom crypto. Secrets never touch disk in plaintext. |
+| Network detection | Layered (L0-L4) | Single ping, navigator.onLine only | `navigator.onLine` gives false positives. Layered approach: instant offline detection + VPN heuristic + DNS + HTTP + circuit breaker. Degrades gracefully at each level. |
+| VPN detection | `os.networkInterfaces()` heuristic | Native NWPathMonitor addon | No native code needed. utun/tun interface check + DNS resolve of internal hostnames is sufficient. Native addon is overkill for this use case. |
 | API framework | Fastify | Express, Koa | Schema validation, fast, good plugin ecosystem |
 | Grid layout | react-grid-layout | CSS Grid manual, Gridstack | Built-in drag/resize, React-native. Only used in fullscreen/expanded mode. |
 | Styling | Tailwind + Container Queries | CSS Modules, styled-components | Rapid development, container queries for per-widget fluid adaptation |
@@ -954,11 +1359,13 @@ iDashboard/
 
 - **Local API binds to 127.0.0.1 only** - Never exposed to network
 - **No secrets in config files** - All auth tokens via `${ENV_VAR}` references
+- **Secrets encrypted at rest** - API tokens stored via Electron `safeStorage` (macOS Keychain). Never written to disk in plaintext.
 - **Optional API authentication** - Bearer token for local API if desired
 - **Rate limiting** - Prevent runaway scripts from flooding events
 - **No eval/exec of user input** - Event data is sanitized before rendering
 - **Context isolation** - Electron renderer has no direct Node.js access
 - **CSP headers** - Strict Content Security Policy in renderer
+- **SQLite in user data directory** - Database file in `app.getPath('userData')`, not world-readable. Contains event data, not credentials.
 
 ---
 
@@ -969,8 +1376,11 @@ iDashboard/
 | Connector logic | Vitest | Each connector's poll/normalize logic with mocked HTTP |
 | State management | Vitest | Store actions, event lifecycle, TTL expiry |
 | API routes | Vitest + Supertest | All endpoints, validation, error handling |
-| UI components | Vitest + React Testing Library | Fluid sizing, widget rendering, animations |
-| E2E flows | Playwright for Electron | Full flow: push event → UI update → action execution |
+| Database | Vitest | Event insert/query/purge, aggregate rollup, retention, schema migrations (in-memory SQLite) |
+| Circuit breaker | Vitest | State transitions (closed→open→half-open→closed), backoff calculation, jitter |
+| Network reachability | Vitest | VPN interface detection, DNS mock, overall state computation |
+| UI components | Vitest + React Testing Library | Fluid sizing, widget rendering, animations, health indicators |
+| E2E flows | Playwright for Electron | Full flow: push event → DB persist → UI update → action execution |
 | Config parsing | Vitest | YAML loading, env substitution, schema validation |
 
 ---
@@ -1001,11 +1411,12 @@ Decisions resolved by user requirements:
 - ~~Window modes?~~ → **Dockable to edges/corners + temporary always-on-top** (30s default, configurable)
 - ~~How configurable?~~ → **Everything via config file**, nothing hardcoded
 - ~~Custom connector plugins?~~ → **High flexibility**: auto-discover connector files + generic HTTP/push connectors for zero-code setup. Formal SDK deferred to Phase 4.
+- ~~Event persistence?~~ → **SQLite** via better-sqlite3 + Drizzle ORM. Events survive restart. 30-day retention with daily aggregates for trends.
+- ~~Network reachability?~~ → **Layered detection**: `net.isOnline()` + VPN heuristic + DNS resolve + circuit breaker with exponential backoff. No native macOS addons needed.
 
 Remaining open questions:
 
 1. **Claude Code hook installer** - Should the setup wizard modify `~/.claude/settings.json` automatically, or just print instructions?
-2. **Event persistence** - Should events survive app restart (SQLite/file) or is in-memory sufficient?
-3. **Multi-user** - Will this ever need to aggregate data from multiple developers, or is it strictly a personal tool?
-4. **Notification sounds** - Default system sounds, or bundled custom sounds?
-5. **Config file location** - `~/.idashboard/` (XDG-style) or `~/.config/idashboard/` (Linux convention) or alongside the app?
+2. **Multi-user** - Will this ever need to aggregate data from multiple developers, or is it strictly a personal tool?
+3. **Notification sounds** - Default system sounds, or bundled custom sounds?
+4. **Config file location** - `~/.idashboard/` (XDG-style) or `~/.config/idashboard/` (Linux convention) or alongside the app?
