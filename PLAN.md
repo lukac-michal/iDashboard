@@ -7,7 +7,31 @@
 1. **Passive monitoring** - Aggregating status/data from multiple DevOps and development tools (OctopusDeploy, Graylog, TeamCity, etc.) into a single glanceable view.
 2. **Active attention routing** - Tools like Claude Code, Cursor, and long-running processes can *push* notifications to the dashboard when they need human attention, eliminating the need to constantly poll terminal tabs.
 
-The UI must be **resolution-adaptive**: usable as a 200x100px system tray popover showing only critical icons, a 400x300px floating widget with compact status rows, or a fullscreen dashboard with rich detail panels.
+### Core Requirements
+
+- **Free-form resizable window** - Continuously resizable from any small size up to fullscreen. No preset size tiers — the UI adapts fluidly to whatever dimensions the user drags to.
+- **Dockable to screen edges/corners** - The window can snap/dock to any screen border or corner, staying anchored there.
+- **Temporary always-on-top** - When a notification arrives, the window surfaces as always-on-top for a configurable duration (default: 30 seconds), then auto-hides. The duration, hide behavior, and flash count are all configurable.
+- **Everything configurable via config file** - Window size, position, dock location, always-on-top duration, hide delay, flash count, notification sounds, connector settings — nothing is hardcoded. All behavior is driven by a human-editable YAML config file.
+- **Highly flexible connector system** - Adding a new data source connector must be straightforward. Connectors are self-contained modules with a simple interface. A generic HTTP connector covers arbitrary REST APIs without writing code.
+- **macOS-first** - Primary target is macOS. Linux/Windows support is a future goal.
+
+---
+
+## 1.5 Why Not Existing Mac Tools?
+
+macOS has several tools in the overlay/widget space. None fully satisfy the requirements:
+
+| Tool | What It Does | Why It Falls Short |
+|------|-------------|-------------------|
+| **macOS Notification Center / Widgets** | Built-in desktop widgets (Sonoma+) | No always-on-top, no docking, no REST API polling, not freely resizable, no custom notification behavior |
+| **Übersicht** | HTML/CSS/JS widgets rendered on desktop | Renders *behind* all windows (desktop layer) — no overlay, no always-on-top. Great for wallpaper-level info, wrong for attention routing |
+| **Hammerspoon** | Lua scripting for macOS automation. Can create webview windows, poll HTTP APIs, set always-on-top | Closest match, but building a full dashboard in Lua webviews = reinventing the wheel with significantly worse DX. No hot reload, no component model, no npm ecosystem |
+| **SwiftBar / xbar** | Menu bar plugins (scriptable, run any script and render output in menu bar) | Limited to menu bar dropdown. No overlay window, no resize, no dock, no rich UI |
+| **BetterTouchTool** | Floating web views with always-on-top | Paid ($22). Building on someone else's platform. Limited auto-hide/dock control, no config-file-driven setup, no connector abstraction |
+| **GeekTool** | Desktop-level widgets | Behind all windows (like Übersicht but older), not actively maintained |
+
+**Verdict:** Building a custom app is warranted. The unique combination of dockable + temporary always-on-top + free-form resize + configurable REST connectors + config-file-driven behavior doesn't exist in any single tool. Hammerspoon comes closest but would require building the same app with worse tooling.
 
 ---
 
@@ -104,7 +128,13 @@ The UI must be **resolution-adaptive**: usable as a 200x100px system tray popove
 
 ### 4.1 Connector Engine
 
-The connector engine is the heart of the data collection system. Each connector is a self-contained module that knows how to talk to one external system.
+The connector engine is the heart of the data collection system. **Connectors must be easy to add.** Each connector is a self-contained module that knows how to talk to one external system. Adding a new connector means:
+
+1. **For code-based connectors:** Create a single TypeScript file implementing the `Connector` interface, drop it in `src/main/connectors/`, and add a YAML config file. No changes to core code required.
+2. **For config-only connectors:** Use the Generic HTTP connector — just write a YAML file describing the URL, auth, polling interval, and response mapping. Zero code.
+3. **For push-based connectors:** Any script/tool can POST JSON to the local API. No connector code needed at all.
+
+The engine auto-discovers connector files at startup and hot-reloads new connector configs added to `~/.idashboard/connectors/` without restart.
 
 #### Connector Interface
 
@@ -193,13 +223,13 @@ interface ConnectorEvent {
    - Focus/raise the terminal window (via shell command)
    - Execute a configured response action
 
-**Widget behavior at different sizes:**
-| Size | Display |
-|------|---------|
-| Tiny (icon only) | Blinking Claude icon with attention color |
-| Small (200x100) | `CC: session-name ⚡` blinking row |
-| Medium (400x300) | Full card with session name, message preview, action buttons |
-| Large (fullscreen) | Card + full message + conversation context + quick-reply |
+**Widget behavior at different sizes (fluid, not tier-locked):**
+| Available space | Display |
+|----------------|---------|
+| Very small (~100px) | Blinking Claude icon with attention color |
+| Small (~150-250px) | `CC: session-name` blinking row with severity badge |
+| Medium (~300-450px) | Full card with session name, message preview, action buttons |
+| Large (500px+) | Card + full message + conversation context + quick-reply |
 
 ##### 4.1.2 OctopusDeploy Connector
 
@@ -388,37 +418,58 @@ interface DashboardState {
 
 ### 4.4 Adaptive UI System
 
-The UI adapts to the window's actual pixel dimensions, not just viewport breakpoints. This is critical because the user might have a 200x100px overlay *or* a fullscreen dashboard.
+**No preset size tiers.** The window is freely resizable to any dimensions the user wants. The UI adapts fluidly using CSS Container Queries and `ResizeObserver`, progressively revealing or collapsing content based on actual available space — not hardcoded breakpoints.
 
-#### Size Tiers
+#### Continuous Fluid Sizing
 
-```typescript
-type SizeTier = 'icon' | 'micro' | 'compact' | 'standard' | 'expanded';
+Instead of tier-based rendering, each widget uses CSS `@container` queries to decide what to show:
 
-// Determined by window dimensions
-function getSizeTier(width: number, height: number): SizeTier {
-  const area = width * height;
-  if (area < 30000)  return 'icon';      // ~170x170 or smaller
-  if (area < 80000)  return 'micro';     // ~280x280 or smaller
-  if (area < 200000) return 'compact';   // ~450x450 or smaller
-  if (area < 500000) return 'standard';  // ~700x700 or smaller
-  return 'expanded';                      // fullscreen
+```css
+/* Widget adapts to its own container size, not the viewport */
+@container widget (max-width: 120px) {
+  /* Icon-only: just status dot + connector icon */
+  .widget-title, .widget-body, .widget-actions { display: none; }
+}
+
+@container widget (min-width: 121px) and (max-width: 300px) {
+  /* Compact: icon + short title + badge */
+  .widget-body, .widget-actions { display: none; }
+}
+
+@container widget (min-width: 301px) {
+  /* Full: everything visible */
 }
 ```
 
-#### What Each Tier Shows
+The JavaScript layer uses `ResizeObserver` to track the window dimensions as a reactive signal and drives layout decisions that CSS alone can't handle (e.g., switching between a single-column list vs. a multi-column grid):
 
-| Tier | Dimensions (approx) | Content |
-|------|---------------------|---------|
-| **icon** | < 170x170 | Single aggregate status icon. Red = attention needed, Green = all clear, Yellow = warnings. Click expands. |
-| **micro** | ~200x100 to ~280x280 | Icon strip: one icon per connector with status color + badge count. Blinking icons for attention events. |
-| **compact** | ~300x200 to ~450x450 | Stacked rows: `[icon] [connector name] [status text] [badge]`. Scrollable. Action buttons as icon-only. |
-| **standard** | ~500x400 to ~700x700 | Grid of widget cards. Each card shows connector name, latest event, severity bar, and action buttons with labels. |
-| **expanded** | Fullscreen | Full grid layout with drag/resize. Event history timeline. Detailed panels. Charts for trends. Configuration UI. |
+```typescript
+// Reactive window size — no tiers, just raw dimensions
+const windowSize = useWindowSize(); // { width: number, height: number }
+
+// Layout decisions based on continuous dimensions
+const columns = Math.max(1, Math.floor(windowSize.width / 280));
+const showEventHistory = windowSize.height > 400;
+const showActionLabels = windowSize.width > 350;
+```
+
+#### Widget Rendering at Different Sizes
+
+The same widget progressively reveals content as space allows. Nothing is "tier-locked":
+
+| Available space | What shows |
+|----------------|-----------|
+| Very small (~100-150px wide) | Status dot + connector icon only. Blinking icon for attention. |
+| Small (~150-300px wide) | Icon + connector name + severity badge. Truncated status text. |
+| Medium (~300-500px wide) | Full card: name, latest event, severity bar, icon-only action buttons. |
+| Large (500px+ wide) | Full card + event history, action buttons with labels, charts if configured. |
+| Fullscreen | Grid of full cards + event timeline sidebar + settings panel + drag/resize layout editor. |
+
+These are not discrete breakpoints — they are **content-driven CSS container queries** that activate whenever the widget has enough space, regardless of window size.
 
 #### Widget Configuration
 
-Each connector defines how its widget renders at each tier:
+Each connector defines its widget appearance. Visibility thresholds are configurable:
 
 ```yaml
 connectors:
@@ -427,83 +478,183 @@ connectors:
     ui:
       icon: "terminal"           # icon name from icon set
       color: "#f97316"           # brand color
-      tiers:
-        micro:
-          showBadge: true
-          blinkOnAttention: true
-        compact:
-          showLastEvent: true
-          maxTitleLength: 30
-        standard:
-          showActions: true
-          showEventHistory: 3    # last 3 events
-        expanded:
-          showFullHistory: true
-          showChart: false
-          customComponent: null   # or path to custom React component
+      priority: 1                # sort order (lower = higher)
+      showBadge: true
+      blinkOnAttention: true
+      # Content visibility thresholds (px) — all configurable
+      thresholds:
+        showTitle: 150           # min container width to show title text
+        showBody: 300            # min container width to show event body
+        showActions: 250         # min container width to show action buttons
+        showActionLabels: 350    # min width to show text labels on actions
+        showHistory: 400         # min container height to show event history
+        historyCount: 5          # number of past events to show
+      customComponent: null      # or path to custom React component
 ```
 
-#### Window Modes
+#### Window Modes & Docking
 
-iDashboard supports multiple window modes that the user can switch between:
+iDashboard supports multiple window behaviors. The active mode, dock position, and all timing parameters are configurable via `config.yaml`.
 
 | Mode | Behavior |
 |------|----------|
-| **Floating** | Always-on-top, draggable, resizable. Semi-transparent background. |
-| **Docked** | Snaps to screen edge (top/bottom/left/right). Auto-hides when no attention events. |
+| **Floating** | Draggable, freely resizable. Optional always-on-top. Semi-transparent background. |
+| **Docked** | Snaps to a screen edge or corner (configurable: `top`, `bottom`, `left`, `right`, `top-left`, `top-right`, `bottom-left`, `bottom-right`). Stays anchored when other windows move. |
 | **Tray Popup** | Lives in system tray. Click tray icon → popup appears near tray. |
-| **Fullscreen** | Regular maximized window. Shows expanded UI with all features. |
+| **Fullscreen** | Regular maximized window with full feature set. |
+
+#### Docking System
+
+```typescript
+interface DockConfig {
+  position: 'top' | 'bottom' | 'left' | 'right'
+            | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  offsetX: number;              // px offset from edge (default: 0)
+  offsetY: number;              // px offset from edge (default: 0)
+  autoHide: boolean;            // hide when no attention events (default: false)
+  autoHideDelayMs: number;      // delay before hiding after last event dismissed (default: 5000)
+}
+```
+
+Docking uses Electron's `setBounds()` API combined with `screen.getPrimaryDisplay().workAreaSize` to calculate anchor positions. The window resists being moved away from its dock position — the user can resize it freely but it stays anchored to the chosen edge/corner.
+
+#### Temporary Always-on-Top Behavior
+
+When a notification arrives, the window temporarily becomes always-on-top to grab attention, then reverts. All timing and behavior is configurable:
+
+```yaml
+# In config.yaml → window section
+window:
+  alwaysOnTop:
+    permanent: false            # if true, window is always on top (ignores temporary behavior)
+    onNotification:
+      enabled: true             # surface window on notification arrival
+      durationSec: 30           # seconds to stay on top (default: 30)
+      flashCount: 3             # number of times the tray icon / window flashes (default: 3)
+      flashIntervalMs: 500      # ms between flashes (default: 500)
+      afterExpiry: "hide"       # what to do after duration: "hide" | "lower" | "minimize" | "stay"
+                                #   hide: hide window entirely
+                                #   lower: remove always-on-top but keep visible
+                                #   minimize: minimize to tray
+                                #   stay: keep visible but remove always-on-top
+```
+
+**Flow:**
+1. Notification event arrives (e.g., Claude Code needs input)
+2. Window surfaces as always-on-top (`BrowserWindow.setAlwaysOnTop(true)`)
+3. Tray icon and/or window border flashes `flashCount` times
+4. Attention animation runs for `durationSec` seconds
+5. After expiry, the configured `afterExpiry` action executes
+6. If the user interacts with the window before expiry, the timer resets or cancels (configurable)
 
 ---
 
 ### 4.5 Configuration System
 
-All configuration lives in YAML files for easy editing. The app also provides a GUI config editor in expanded mode.
+**Everything is configurable via config files.** Nothing is hardcoded — window size, position, behavior, timing, flash counts, notification sounds, connector settings, UI thresholds — all driven by human-editable YAML. The app watches config files for changes and hot-reloads without restart.
+
+#### Design Principles
+
+1. **Config file is the source of truth** — every behavioral parameter has a corresponding config key
+2. **Sensible defaults** — the app works out of the box with zero config; the user only overrides what they want
+3. **Environment variable substitution** — secrets use `${ENV_VAR}` syntax, never stored in plaintext
+4. **Hot-reload** — config file changes are detected via `fs.watch()` and applied without restart
+5. **Schema-validated** — Zod schemas validate config on load, with clear error messages for invalid values
 
 #### Directory Structure
 
 ```
 ~/.idashboard/
-├── config.yaml              # Main app config
+├── config.yaml              # Main app config (window, API, behavior, notifications)
 ├── connectors/
 │   ├── claude-code.yaml     # One file per connector instance
 │   ├── teamcity-prod.yaml
 │   ├── octopus-prod.yaml
 │   └── graylog-main.yaml
 ├── layouts/
-│   ├── default.yaml         # Default layout
+│   ├── default.yaml         # Default widget layout
 │   └── compact.yaml         # User-saved layouts
 └── themes/
     └── custom.yaml          # Custom theme overrides
 ```
 
-#### Main Config (`config.yaml`)
+#### Main Config (`config.yaml`) — Complete Reference
+
+Every key shown below is optional. Defaults are shown as values.
 
 ```yaml
-app:
-  port: 19280                     # Local API port
-  startMinimized: true            # Start in system tray
-  defaultWindowMode: floating
-  defaultSize: { width: 400, height: 300 }
-  alwaysOnTop: true
-  opacity: 0.95                   # Window opacity (floating mode)
-  theme: dark                     # dark | light | auto
+# ─── Window Behavior ───────────────────────────────────────────────
+window:
+  defaultMode: floating           # floating | docked | tray | fullscreen
+  size:
+    width: 400                    # initial width in px (any positive integer)
+    height: 300                   # initial height in px (any positive integer)
+    minWidth: 80                  # minimum resize width
+    minHeight: 60                 # minimum resize height
+    rememberLastSize: true        # persist size across restarts
+  position:
+    x: null                       # initial x position (null = center of screen)
+    y: null                       # initial y position (null = center of screen)
+    rememberLastPosition: true    # persist position across restarts
+  opacity: 0.95                   # window opacity 0.0-1.0 (floating/docked modes)
+  frameless: true                 # hide native window frame (custom title bar)
+  clickThrough: false             # allow clicks to pass through transparent areas
+  theme: dark                     # dark | light | auto (follows OS)
 
+  # Docking
+  dock:
+    position: null                # null (undocked) | top | bottom | left | right
+                                  # | top-left | top-right | bottom-left | bottom-right
+    offsetX: 0                    # px offset from dock edge
+    offsetY: 0                    # px offset from dock edge
+    autoHide: false               # auto-hide when no attention events
+    autoHideDelayMs: 5000         # ms to wait after last event before hiding
+    showOnHover: true             # reveal docked+hidden window on mouse hover at edge
+
+  # Always-on-top behavior
+  alwaysOnTop:
+    permanent: false              # if true, always on top regardless of notifications
+    onNotification:
+      enabled: true               # surface window when notification arrives
+      durationSec: 30             # seconds to stay on top after notification
+      flashCount: 3               # number of flashes (tray icon + window border)
+      flashIntervalMs: 500        # ms between flashes
+      afterExpiry: "hide"         # hide | lower | minimize | stay
+      cancelOnInteraction: true   # cancel timer if user clicks the window
+
+# ─── Local API Server ──────────────────────────────────────────────
 api:
-  bind: "127.0.0.1"
+  port: 19280                     # HTTP + WebSocket port
+  bind: "127.0.0.1"              # bind address (127.0.0.1 = localhost only)
   auth:
-    enabled: false                # Enable bearer token auth
+    enabled: false                # require bearer token for API access
     token: "${ENV_IDASHBOARD_TOKEN}"
+  rateLimit:
+    maxRequestsPerMinute: 120     # rate limit for inbound events
+    maxBurstSize: 20              # max burst before throttling
 
+# ─── Event Behavior ────────────────────────────────────────────────
 events:
-  maxHistory: 1000
-  defaultTTL: 3600000             # 1 hour in ms
-  attentionBlinkDefault: 30000    # 30 seconds
+  maxHistory: 1000                # max events kept in rolling buffer
+  defaultTTLMs: 3600000           # default event time-to-live (1 hour)
+  deduplication:
+    enabled: true                 # deduplicate identical events within window
+    windowMs: 5000                # dedup window in ms
 
+# ─── Notification Behavior ─────────────────────────────────────────
 notifications:
-  sound: true                     # Play sound on attention events
-  soundFile: null                 # Custom sound file path (null = default)
-  nativeNotification: true        # Also show OS notification
+  sound:
+    enabled: true                 # play sound on attention events
+    file: null                    # custom sound file path (null = system default)
+    volume: 0.7                   # sound volume 0.0-1.0
+  nativeNotification: true        # also show macOS Notification Center notification
+  trayIconBadge: true             # show unread count badge on tray icon
+
+# ─── Startup ───────────────────────────────────────────────────────
+startup:
+  launchAtLogin: false            # register as login item
+  startMinimized: true            # start in tray (not visible)
+  checkForUpdates: true           # auto-update check on startup
 ```
 
 #### Connector Config Example (`connectors/teamcity-prod.yaml`)
@@ -513,24 +664,33 @@ id: teamcity-prod
 type: teamcity
 displayName: "TeamCity Production"
 enabled: true
-pollIntervalMs: 15000
+pollIntervalMs: 15000             # poll interval in ms (0 = push-only)
 
 auth:
-  type: bearer
+  type: bearer                    # apiKey | bearer | basic | none
   token: "${ENV_TC_TOKEN}"
 
 settings:
   baseUrl: "https://teamcity.company.com"
-  buildConfigs:                    # Only monitor these (empty = all)
+  buildConfigs:                   # only monitor these build configs (empty = all)
     - "MyProject_Build"
     - "MyProject_Deploy"
-  failureThreshold: 2             # Alert after N consecutive failures
-  queueDepthWarning: 5            # Warn if queue exceeds this
+  failureThreshold: 2             # alert after N consecutive failures
+  queueDepthWarning: 5            # warn if queue exceeds this
 
 ui:
   icon: "hammer"
   color: "#06b6d4"
-  priority: 2                     # Sort order in dashboard (lower = higher)
+  priority: 2                     # sort order (lower = higher priority)
+  showBadge: true
+  blinkOnAttention: true
+  thresholds:                     # widget content visibility (px)
+    showTitle: 150
+    showBody: 300
+    showActions: 250
+    showActionLabels: 350
+    showHistory: 400
+    historyCount: 5
 ```
 
 ---
@@ -727,16 +887,18 @@ iDashboard/
 
 **Goal:** Working app with Claude Code attention notifications + one pull connector.
 
-1. **Electron shell** - Window management, system tray, always-on-top, resizing
-2. **Local API server** - Fastify on localhost, `POST /events` endpoint
-3. **Event bus + Zustand store** - Core reactive state
-4. **Adaptive UI skeleton** - Size tier detection, tier switching, basic grid
-5. **Claude Code connector** - Push via hooks, blinking notification, focus-terminal action
-6. **TeamCity connector** - Pull via REST API, build status display
-7. **Configuration system** - YAML loader, env variable substitution
-8. **Basic theming** - Dark mode default
+1. **Electron shell** - Window management, system tray, free-form resizing
+2. **Docking system** - Snap to screen edges/corners, configurable offset
+3. **Temporary always-on-top** - Surface on notification, auto-hide after configurable duration, flash count
+4. **Local API server** - Fastify on localhost, `POST /events` endpoint
+5. **Event bus + Zustand store** - Core reactive state
+6. **Adaptive UI skeleton** - Fluid sizing with CSS container queries, ResizeObserver-driven layout
+7. **Claude Code connector** - Push via hooks, blinking notification, focus-terminal action
+8. **TeamCity connector** - Pull via REST API, build status display
+9. **Configuration system** - YAML config loader, hot-reload, env variable substitution, Zod validation
+10. **Basic theming** - Dark mode default
 
-**Deliverable:** User can install, configure Claude Code hooks, and see blinking notifications when Claude needs input. TeamCity build status visible.
+**Deliverable:** User can install, configure Claude Code hooks, and see blinking notifications when Claude needs input. Window docks to a screen corner, surfaces temporarily on notification, hides after 30s. TeamCity build status visible. All behavior configurable via `~/.idashboard/config.yaml`.
 
 ### Phase 2: Connector Expansion
 
@@ -749,12 +911,11 @@ iDashboard/
 
 ### Phase 3: Rich UI
 
-1. **react-grid-layout integration** - Drag/resize widgets in expanded mode
-2. **Layout persistence** - Save/load layouts
-3. **Settings UI** - In-app connector configuration editor
+1. **react-grid-layout integration** - Drag/resize widgets in expanded/fullscreen mode
+2. **Layout persistence** - Save/load widget layouts as YAML
+3. **Settings UI** - In-app connector configuration editor (in fullscreen mode)
 4. **Event history timeline** - Scrollable event log with filters
-5. **Custom themes** - User-defined color schemes
-6. **Multiple window modes** - Docked, floating, tray popup
+5. **Custom themes** - User-defined color schemes via theme YAML
 
 ### Phase 4: Advanced Features
 
@@ -771,13 +932,16 @@ iDashboard/
 
 | Decision | Chosen | Alternative | Rationale |
 |----------|--------|-------------|-----------|
-| Desktop framework | Electron | Tauri | JS-only stack, trivial HTTP server, mature overlay support. Accept higher memory. |
+| Desktop framework | Electron | Tauri, Hammerspoon, Übersicht | JS-only stack, trivial HTTP server, mature overlay/dock support. Mac-native tools lack the full feature set (see Section 1.5). Accept higher memory. |
+| UI sizing model | Continuous fluid (CSS Container Queries + ResizeObserver) | Preset size tiers | User wants free-form resize, not predefined breakpoints. Container queries give per-widget fluid adaptation. |
 | State management | Zustand | Redux, MobX, Jotai | Minimal boilerplate, great TS support, easy IPC sync |
-| Config format | YAML | JSON, TOML | Human-readable, supports comments, familiar to DevOps |
+| Config format | YAML | JSON, TOML | Human-readable, supports comments, familiar to DevOps. Hot-reload via `fs.watch()`. |
+| Config scope | Everything configurable | Hardcoded defaults | User requirement: nothing set in stone. Every behavioral parameter has a config key with sensible defaults. |
 | API framework | Fastify | Express, Koa | Schema validation, fast, good plugin ecosystem |
-| Grid layout | react-grid-layout | CSS Grid manual, Gridstack | Built-in breakpoints, drag/resize, React-native |
-| Styling | Tailwind + Container Queries | CSS Modules, styled-components | Rapid development, container queries for per-widget adaptation |
+| Grid layout | react-grid-layout | CSS Grid manual, Gridstack | Built-in drag/resize, React-native. Only used in fullscreen/expanded mode. |
+| Styling | Tailwind + Container Queries | CSS Modules, styled-components | Rapid development, container queries for per-widget fluid adaptation |
 | Claude Code integration | Hooks → HTTP push | Process monitoring, PTY sniffing | Official supported mechanism, clean separation |
+| Connector flexibility | Auto-discovery + Generic HTTP + Generic Push | Formal plugin SDK | Low barrier to add connectors: drop a file or write YAML. Formal SDK deferred to Phase 4. |
 
 ---
 
@@ -800,7 +964,7 @@ iDashboard/
 | Connector logic | Vitest | Each connector's poll/normalize logic with mocked HTTP |
 | State management | Vitest | Store actions, event lifecycle, TTL expiry |
 | API routes | Vitest + Supertest | All endpoints, validation, error handling |
-| UI components | Vitest + React Testing Library | Tier switching, widget rendering, animations |
+| UI components | Vitest + React Testing Library | Fluid sizing, widget rendering, animations |
 | E2E flows | Playwright for Electron | Full flow: push event → UI update → action execution |
 | Config parsing | Vitest | YAML loading, env substitution, schema validation |
 
@@ -826,11 +990,17 @@ Beyond Phase 1-2, the connector system can expand to:
 
 ## 12. Open Questions for User Input
 
-These decisions should be made before or during Phase 1 implementation:
+Decisions resolved by user requirements:
+- ~~Primary OS target?~~ → **macOS-first** (Linux/Windows deferred)
+- ~~Preset size tiers vs. free-form?~~ → **Free-form resize** with fluid CSS container queries
+- ~~Window modes?~~ → **Dockable to edges/corners + temporary always-on-top** (30s default, configurable)
+- ~~How configurable?~~ → **Everything via config file**, nothing hardcoded
+- ~~Custom connector plugins?~~ → **High flexibility**: auto-discover connector files + generic HTTP/push connectors for zero-code setup. Formal SDK deferred to Phase 4.
 
-1. **Primary OS target?** - macOS, Windows, Linux, or all three from the start?
-2. **Claude Code hook installer** - Should the setup wizard modify `~/.claude/settings.json` automatically, or just print instructions?
-3. **Event persistence** - Should events survive app restart (SQLite/file) or is in-memory sufficient?
-4. **Multi-user** - Will this ever need to aggregate data from multiple developers, or is it strictly a personal tool?
-5. **Custom connector plugins** - How important is a formal plugin SDK vs. just using the generic HTTP/push connectors?
-6. **Notification sounds** - Default system sounds, or bundled custom sounds?
+Remaining open questions:
+
+1. **Claude Code hook installer** - Should the setup wizard modify `~/.claude/settings.json` automatically, or just print instructions?
+2. **Event persistence** - Should events survive app restart (SQLite/file) or is in-memory sufficient?
+3. **Multi-user** - Will this ever need to aggregate data from multiple developers, or is it strictly a personal tool?
+4. **Notification sounds** - Default system sounds, or bundled custom sounds?
+5. **Config file location** - `~/.idashboard/` (XDG-style) or `~/.config/idashboard/` (Linux convention) or alongside the app?
