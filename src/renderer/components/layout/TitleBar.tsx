@@ -22,7 +22,7 @@ export function TitleBar() {
           onClick={() => setActivePanel('dashboard')}
         >
           <span className="text-white">iDashboard</span>
-          <span className="text-gray-500"> v0.2.0</span>
+          <span className="text-gray-500"> v0.3.0</span>
         </span>
 
         {activePanel === 'dashboard' && activeCount > 0 && (

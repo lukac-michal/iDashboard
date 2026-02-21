@@ -1,6 +1,6 @@
 {
   "name": "idashboard",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Lightweight developer dashboard for unified tool monitoring and attention routing",
   "main": "dist/main/index.js",
   "scripts": {
