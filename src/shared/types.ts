@@ -295,6 +295,119 @@ export type IPCChannel =
   | 'auth:status'
   | 'action:execute';
 
+// --- Grid Layout Types ---
+
+export interface GridLayoutItem {
+  i: string; // connector ID
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  minW?: number;
+  minH?: number;
+  maxW?: number;
+  maxH?: number;
+}
+
+export interface SavedLayout {
+  name: string;
+  items: GridLayoutItem[];
+  columns: number;
+  updatedAt: number;
+}
+
+// --- Theme Types ---
+
+export interface ThemeColors {
+  bg: string;
+  surface: string;
+  surfaceHover: string;
+  border: string;
+  text: string;
+  textMuted: string;
+  accent: string;
+}
+
+export interface CustomTheme {
+  name: string;
+  colors: ThemeColors;
+}
+
+// --- Cross-Connector Rule Types ---
+
+export type RuleOperator = 'equals' | 'contains' | 'matches' | 'gt' | 'lt';
+
+export interface RuleCondition {
+  field: 'severity' | 'title' | 'body' | 'category' | 'eventType' | 'connectorId' | 'status';
+  operator: RuleOperator;
+  value: string;
+}
+
+export type RuleActionType = 'escalate' | 'suppress' | 'tag' | 'notify' | 'group';
+
+export interface RuleAction {
+  type: RuleActionType;
+  params: Record<string, unknown>;
+}
+
+export interface CrossConnectorRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  conditions: RuleCondition[];
+  matchMode: 'all' | 'any';
+  actions: RuleAction[];
+  priority: number;
+}
+
+// --- Keyboard Shortcut Types ---
+
+export interface KeyboardShortcut {
+  id: string;
+  keys: string; // e.g., "Ctrl+Shift+D"
+  action: string;
+  description: string;
+  scope: 'global' | 'app';
+}
+
+// --- Data Export Types ---
+
+export type ExportFormat = 'csv' | 'json';
+
+export interface ExportOptions {
+  format: ExportFormat;
+  connectorIds?: string[];
+  fromTimestamp?: number;
+  toTimestamp?: number;
+  includeMetadata?: boolean;
+  maxRows?: number;
+}
+
+// --- Aggregate Query Types ---
+
+export interface AggregateQuery {
+  connectorId?: string;
+  fromDayKey: number;
+  toDayKey: number;
+}
+
+export interface AggregateResult {
+  dayKey: number;
+  connectorId: string;
+  category: string;
+  eventType: string;
+  totalCount: number;
+  successCount: number;
+  failureCount: number;
+  avgDurationMs: number | null;
+  p95DurationMs: number | null;
+  maxDurationMs: number | null;
+}
+
+// --- Settings Panel Types ---
+
+export type SettingsTab = 'general' | 'connectors' | 'appearance' | 'notifications' | 'network' | 'shortcuts' | 'rules' | 'about';
+
 // --- API Types ---
 
 export interface PushEventRequest {

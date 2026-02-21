@@ -41,6 +41,37 @@ export const IPC = {
   // Actions
   ACTION_EXECUTE: 'action:execute',
 
+  // Layout persistence
+  LAYOUT_SAVE: 'layout:save',
+  LAYOUT_LOAD: 'layout:load',
+  LAYOUT_LIST: 'layout:list',
+
+  // Theme
+  THEME_SET: 'theme:set',
+  THEME_GET_CUSTOM: 'theme:get-custom',
+
+  // Aggregates
+  AGGREGATES_QUERY: 'aggregates:query',
+
+  // Data export
+  EXPORT_EVENTS: 'export:events',
+
+  // Sound
+  SOUND_TEST: 'sound:test',
+
+  // Rules
+  RULES_LIST: 'rules:list',
+  RULES_SAVE: 'rules:save',
+
+  // Settings / config update
+  CONFIG_UPDATE_PARTIAL: 'config:update-partial',
+  CONNECTORS_UPDATE: 'connectors:update',
+  CONNECTORS_ADD: 'connectors:add',
+  CONNECTORS_REMOVE: 'connectors:remove',
+
+  // Connector health details
+  CONNECTOR_HEALTH_ALL: 'connector:health-all',
+
   // App lifecycle
   APP_READY: 'app:ready',
   APP_FOCUS_TERMINAL: 'app:focus-terminal',

@@ -91,11 +91,33 @@ export class ConfigLoader {
     return connectors.sort((a, b) => (a.ui.priority ?? 10) - (b.ui.priority ?? 10));
   }
 
+  /** Save connector configs to individual YAML files */
+  saveConnectors(connectors: ConnectorConfig[]): void {
+    const connectorsDir = path.join(this.configDir, 'connectors');
+    fs.mkdirSync(connectorsDir, { recursive: true });
+
+    for (const connector of connectors) {
+      const filePath = path.join(connectorsDir, `${connector.id}.yaml`);
+      const yamlStr = yaml.dump(connector, { lineWidth: 120 });
+      fs.writeFileSync(filePath, yamlStr, 'utf-8');
+    }
+
+    // Remove config files for connectors that no longer exist
+    const validIds = new Set(connectors.map(c => `${c.id}.yaml`));
+    const files = fs.readdirSync(connectorsDir).filter(f => f.endsWith('.yaml') || f.endsWith('.yml'));
+    for (const file of files) {
+      if (!validIds.has(file)) {
+        fs.unlinkSync(path.join(connectorsDir, file));
+      }
+    }
+  }
+
   ensureConfigDir(): void {
     fs.mkdirSync(this.configDir, { recursive: true });
     fs.mkdirSync(path.join(this.configDir, 'connectors'), { recursive: true });
     fs.mkdirSync(path.join(this.configDir, 'layouts'), { recursive: true });
     fs.mkdirSync(path.join(this.configDir, 'themes'), { recursive: true });
+    fs.mkdirSync(path.join(this.configDir, 'plugins'), { recursive: true });
   }
 
   startWatching(

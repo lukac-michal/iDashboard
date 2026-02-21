@@ -55,6 +55,9 @@
     "@types/better-sqlite3": "^7.6.0",
     "@types/ws": "^8.5.0"
   },
+  "bin": {
+    "idashboard": "dist/cli/index.js"
+  },
   "author": "",
   "license": "MIT"
 }

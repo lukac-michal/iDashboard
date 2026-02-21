@@ -3,12 +3,32 @@
 // ============================================================
 
 import { create } from 'zustand';
-import type { ConnectorEvent, ConnectorStatus, AppConfig, ReachabilityState } from '@shared/types';
+import type {
+  ConnectorEvent,
+  ConnectorStatus,
+  AppConfig,
+  ReachabilityState,
+  GridLayoutItem,
+  SettingsTab,
+  AggregateResult,
+  CrossConnectorRule,
+  ThemeColors,
+} from '@shared/types';
+
+export type ViewPanel = 'dashboard' | 'history' | 'trends' | 'diagnostics' | 'settings';
 
 interface DashboardState {
   // Events
   events: Map<string, ConnectorEvent>;
   activeEvents: ConnectorEvent[];
+
+  // History
+  historyEvents: ConnectorEvent[];
+  historyFilter: {
+    connectorId?: string;
+    severity?: string;
+    search?: string;
+  };
 
   // Connectors
   connectors: ConnectorStatus[];
@@ -16,6 +36,12 @@ interface DashboardState {
   // UI
   windowWidth: number;
   windowHeight: number;
+  activePanel: ViewPanel;
+  settingsTab: SettingsTab;
+
+  // Grid layout
+  gridLayout: GridLayoutItem[];
+  gridEditMode: boolean;
 
   // Network
   networkState: ReachabilityState;
@@ -24,6 +50,16 @@ interface DashboardState {
 
   // Config
   config: AppConfig | null;
+
+  // Theme
+  themeColors: ThemeColors | null;
+  currentThemeName: string;
+
+  // Trends
+  aggregates: AggregateResult[];
+
+  // Rules
+  rules: CrossConnectorRule[];
 
   // Actions
   pushEvent: (event: ConnectorEvent) => void;
@@ -34,25 +70,43 @@ interface DashboardState {
   setNetworkState: (state: ReachabilityState) => void;
   setOnlineStatus: (online: boolean, vpn: boolean) => void;
   setConfig: (config: AppConfig) => void;
+  setActivePanel: (panel: ViewPanel) => void;
+  setSettingsTab: (tab: SettingsTab) => void;
+  setGridLayout: (layout: GridLayoutItem[]) => void;
+  setGridEditMode: (editMode: boolean) => void;
+  setHistoryEvents: (events: ConnectorEvent[]) => void;
+  setHistoryFilter: (filter: DashboardState['historyFilter']) => void;
+  setThemeColors: (colors: ThemeColors | null, name: string) => void;
+  setAggregates: (aggregates: AggregateResult[]) => void;
+  setRules: (rules: CrossConnectorRule[]) => void;
 }
 
 export const useDashboardStore = create<DashboardState>((set, get) => ({
   events: new Map(),
   activeEvents: [],
+  historyEvents: [],
+  historyFilter: {},
   connectors: [],
   windowWidth: window.innerWidth,
   windowHeight: window.innerHeight,
+  activePanel: 'dashboard',
+  settingsTab: 'general',
+  gridLayout: [],
+  gridEditMode: false,
   networkState: 'online',
   isOnline: true,
   vpnDetected: false,
   config: null,
+  themeColors: null,
+  currentThemeName: 'dark',
+  aggregates: [],
+  rules: [],
 
   pushEvent: (event) => {
     set((state) => {
       const events = new Map(state.events);
       events.set(event.id, event);
 
-      // Keep max 1000 events in memory
       if (events.size > 1000) {
         const oldest = [...events.keys()].slice(0, events.size - 1000);
         for (const key of oldest) events.delete(key);
@@ -92,12 +146,17 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   },
 
   setConnectors: (connectors) => set({ connectors }),
-
   setWindowSize: (width, height) => set({ windowWidth: width, windowHeight: height }),
-
   setNetworkState: (networkState) => set({ networkState }),
-
   setOnlineStatus: (isOnline, vpnDetected) => set({ isOnline, vpnDetected }),
-
   setConfig: (config) => set({ config }),
+  setActivePanel: (activePanel) => set({ activePanel }),
+  setSettingsTab: (settingsTab) => set({ settingsTab }),
+  setGridLayout: (gridLayout) => set({ gridLayout }),
+  setGridEditMode: (gridEditMode) => set({ gridEditMode }),
+  setHistoryEvents: (historyEvents) => set({ historyEvents }),
+  setHistoryFilter: (historyFilter) => set({ historyFilter }),
+  setThemeColors: (themeColors, currentThemeName) => set({ themeColors, currentThemeName }),
+  setAggregates: (aggregates) => set({ aggregates }),
+  setRules: (rules) => set({ rules }),
 }));
