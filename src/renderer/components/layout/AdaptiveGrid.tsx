@@ -38,8 +38,8 @@ export function AdaptiveGrid() {
     });
   }, [connectors, eventsByConnector]);
 
-  const handleAction = (connectorId: string, actionId: string) => {
-    window.iDashboard?.executeAction(connectorId, actionId);
+  const handleAction = (connectorId: string, actionId: string, params?: unknown) => {
+    window.iDashboard?.executeAction(connectorId, actionId, params);
   };
 
   // For connectors with no status yet but have events, create a placeholder
@@ -67,11 +67,11 @@ export function AdaptiveGrid() {
 
   return (
     <div
-      className="p-2 h-full overflow-y-auto"
+      className="p-6 h-full overflow-y-auto"
       style={{
         display: 'grid',
         gridTemplateColumns: `repeat(${columns}, 1fr)`,
-        gap: '8px',
+        gap: '16px',
         alignContent: 'start',
       }}
     >

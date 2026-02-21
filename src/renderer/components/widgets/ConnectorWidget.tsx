@@ -2,7 +2,6 @@
 // ConnectorWidget - Displays events grouped by connector
 // ============================================================
 
-import { useMemo } from 'react';
 import { HealthDot } from '@renderer/components/common/HealthDot';
 import { EventCard } from './EventCard';
 import type { ConnectorEvent, ConnectorStatus } from '@shared/types';
@@ -12,7 +11,7 @@ interface ConnectorWidgetProps {
   events: ConnectorEvent[];
   containerWidth: number;
   onDismiss: (eventId: string) => void;
-  onAction: (connectorId: string, actionId: string) => void;
+  onAction: (connectorId: string, actionId: string, params?: unknown) => void;
 }
 
 export function ConnectorWidget({
@@ -23,11 +22,6 @@ export function ConnectorWidget({
   onAction,
 }: ConnectorWidgetProps) {
   const showTitle = containerWidth >= 150;
-  const showHistory = containerWidth >= 400;
-
-  const recentEvents = useMemo(() => {
-    return events.slice(0, showHistory ? 5 : 1);
-  }, [events, showHistory]);
 
   if (events.length === 0 && !connector.connected) {
     return null;
@@ -36,7 +30,7 @@ export function ConnectorWidget({
   return (
     <div className="animate-slide-in" style={{ containerType: 'inline-size', containerName: 'widget' }}>
       {showTitle && (
-        <div className="flex items-center gap-2 mb-1.5 px-1">
+        <div className="flex items-center gap-2 mb-3 px-1">
           <HealthDot health={connector.health} />
           <span className="text-xs font-medium text-gray-400 truncate">
             {connector.displayName}
@@ -49,8 +43,8 @@ export function ConnectorWidget({
         </div>
       )}
 
-      <div className="space-y-1.5">
-        {recentEvents.map((event) => (
+      <div className="space-y-3">
+        {events.map((event) => (
           <EventCard
             key={event.id}
             event={event}

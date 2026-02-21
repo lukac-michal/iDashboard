@@ -7,7 +7,7 @@ import type { ActionButton as ActionButtonType } from '@shared/types';
 interface ActionButtonProps {
   action: ActionButtonType;
   showLabel?: boolean;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
 }
 
 export function ActionButton({ action, showLabel = true, onClick }: ActionButtonProps) {

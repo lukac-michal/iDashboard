@@ -29,6 +29,8 @@ import { TrayManager } from './window/tray';
 import { registerIPCHandlers, pushToRenderer } from './ipc/channels';
 import { createAPIServer, startAPIServer } from './api/server';
 import { IPC } from '@shared/ipc-channels';
+import { meetsMinSeverity } from '@shared/constants';
+import { log, warn, error as logError } from './utils/log';
 import type { ConnectorEvent, AppConfig, ConnectorConfig } from '@shared/types';
 
 // Singleton instances
@@ -54,8 +56,8 @@ async function bootstrap(): Promise<void> {
   config = configLoader.loadAppConfig();
   connectorConfigs = configLoader.loadConnectors();
 
-  console.log(`[Main] Config loaded from ${configDir}`);
-  console.log(`[Main] Found ${connectorConfigs.length} connector config(s)`);
+  log('Main', `Config loaded from ${configDir}`);
+  log('Main', `Found ${connectorConfigs.length} connector config(s)`);
 
   // --- Database ---
   const dbPath = path.join(app.getPath('userData'), 'idashboard.db');
@@ -71,7 +73,7 @@ async function bootstrap(): Promise<void> {
     config.storage.vacuumIntervalHours,
   );
   maintenance.start();
-  console.log(`[Main] Database ready at ${dbPath}`);
+  log('Main', `Database ready at ${dbPath}`);
 
   // --- Services requiring DB ---
   const layoutService = new LayoutPersistenceService(db);
@@ -125,23 +127,36 @@ async function bootstrap(): Promise<void> {
 
   // Wire up event handling
   connectorEngine.onEvent((event: ConnectorEvent) => {
+    log('Event', `Received: severity=${event.severity} title="${event.title}" connector=${event.connectorId}`);
+
     // Apply rules
     const processed = rulesEngine.evaluate(event);
-    if (!processed) return; // Suppressed by rule
+    if (!processed) {
+      log('Event', `Suppressed by rules engine: "${event.title}"`);
+      return;
+    }
 
     // Persist
     eventStore.insert(processed);
     aggregator.recordEvent(processed);
 
     // Push to renderer
-    pushToRenderer(windowManager.getWindow(), IPC.EVENTS_STREAM, processed);
+    const win = windowManager.getWindow();
+    if (win && !win.isDestroyed()) {
+      pushToRenderer(win, IPC.EVENTS_STREAM, processed);
+      log('Event', `Pushed to renderer: id=${processed.id}`);
+    } else {
+      warn('Event', 'Window not available, cannot push to renderer');
+    }
 
-    // Surface window + play sound for attention events
-    if (processed.severity === 'attention' || processed.severity === 'critical') {
+    // Surface window + play sound based on configured severity thresholds
+    const popupMin = config.notifications.popupMinSeverity ?? 'attention';
+    if (meetsMinSeverity(processed.severity, popupMin)) {
+      log('Event', `Surfacing window (severity=${processed.severity} >= ${popupMin}): "${processed.title}"`);
       windowManager.surfaceForNotification();
       soundService.play(windowManager.getWindow());
       trayManager.setBadge(eventStore.getActive().filter(e =>
-        e.severity === 'attention' || e.severity === 'critical',
+        meetsMinSeverity(e.severity, popupMin),
       ).length);
     }
   });
@@ -164,6 +179,13 @@ async function bootstrap(): Promise<void> {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
+
+  // Open DevTools with F12 (dev convenience)
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    if (input.key === 'F12' && input.type === 'keyDown') {
+      mainWindow.webContents.toggleDevTools();
+    }
+  });
 
   // --- Tray ---
   trayManager = new TrayManager(windowManager);
@@ -198,7 +220,7 @@ async function bootstrap(): Promise<void> {
   // --- Multi-Monitor ---
   const multiMonitor = new MultiMonitorService();
   multiMonitor.onDisplayChange(() => {
-    console.log('[Main] Display configuration changed');
+    log('Main', 'Display configuration changed');
   });
 
   // --- IPC ---
@@ -276,13 +298,13 @@ async function bootstrap(): Promise<void> {
     mainWindow.show();
   }
 
-  console.log('[Main] iDashboard ready');
+  log('Main', 'iDashboard ready');
 }
 
 // --- App Lifecycle ---
 
 app.whenReady().then(bootstrap).catch((err) => {
-  console.error('[Main] Bootstrap failed:', err);
+  logError('Main', 'Bootstrap failed:', err);
   app.quit();
 });
 

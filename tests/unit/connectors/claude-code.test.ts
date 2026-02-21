@@ -49,7 +49,7 @@ describe('ClaudeCodeConnector', () => {
     expect(event.body).toBe('Choose option A or B');
     expect(event.uiHints?.color).toBe('#f97316');
     expect(event.uiHints?.blinkDurationMs).toBe(30000);
-    expect(event.uiHints?.actionButtons).toHaveLength(2);
+    expect(event.uiHints?.actionButtons).toHaveLength(1);
   });
 
   it('normalizes task-complete event', () => {

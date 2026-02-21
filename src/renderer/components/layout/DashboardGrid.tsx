@@ -81,8 +81,8 @@ export function DashboardGrid() {
     window.iDashboard?.saveLayout('__last', { items, columns });
   }, [setGridLayout, columns]);
 
-  const handleAction = useCallback((connectorId: string, actionId: string) => {
-    window.iDashboard?.executeAction(connectorId, actionId);
+  const handleAction = useCallback((connectorId: string, actionId: string, params?: unknown) => {
+    window.iDashboard?.executeAction(connectorId, actionId, params);
   }, []);
 
   // Load saved layout on mount
@@ -98,7 +98,7 @@ export function DashboardGrid() {
   const colWidth = Math.floor(width / columns);
 
   return (
-    <div className="p-2 h-full overflow-y-auto">
+    <div className="p-6 h-full overflow-y-auto">
       {gridEditMode && (
         <div className="mb-2 px-2 py-1.5 bg-indigo-900/30 border border-indigo-500/30 rounded-lg text-xs text-indigo-300 flex items-center justify-between">
           <span>Grid edit mode — drag and resize widgets</span>
@@ -130,7 +130,7 @@ export function DashboardGrid() {
         isResizable={gridEditMode}
         onLayoutChange={handleLayoutChange}
         compactType="vertical"
-        margin={[8, 8]}
+        margin={[16, 16]}
       >
         {connectorIds.map((id) => {
           const connector = connectors.find(c => c.id === id) ?? {

@@ -59,7 +59,7 @@ export function EventHistoryPanel() {
   return (
     <div className="flex flex-col h-full">
       {/* Filters */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-800/50 flex-wrap">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-gray-800/50 flex-wrap">
         <input
           type="text"
           placeholder="Search events..."
@@ -142,7 +142,7 @@ export function EventHistoryPanel() {
       </div>
 
       {/* Status bar */}
-      <div className="px-3 py-1.5 border-t border-gray-800/50 text-[10px] text-gray-500">
+      <div className="px-6 py-2.5 border-t border-gray-800/50 text-[10px] text-gray-500">
         {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
         {historyFilter.search || historyFilter.connectorId || historyFilter.severity ? ' (filtered)' : ''}
       </div>
@@ -157,7 +157,7 @@ function HistoryRow({ event }: { event: ConnectorEvent }) {
 
   return (
     <div
-      className="px-3 py-2 hover:bg-gray-800/30 cursor-pointer animate-fade-in"
+      className="px-6 py-3 hover:bg-gray-800/30 cursor-pointer animate-fade-in"
       onClick={() => setExpanded(!expanded)}
     >
       <div className="flex items-center gap-2">

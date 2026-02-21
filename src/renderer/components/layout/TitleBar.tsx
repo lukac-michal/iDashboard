@@ -15,13 +15,14 @@ export function TitleBar() {
   const setGridEditMode = useDashboardStore(s => s.setGridEditMode);
 
   return (
-    <div className="titlebar-drag flex items-center justify-between h-8 px-3 bg-gray-900/60 border-b border-gray-800/50 select-none">
-      <div className="flex items-center gap-2 text-xs">
+    <div className="titlebar-drag flex items-center justify-between h-12 pl-10 pr-6 bg-gray-900/60 border-b border-gray-800/50 select-none">
+      <div className="flex items-center gap-3 text-xs">
         <span
-          className="text-gray-400 font-medium cursor-pointer titlebar-no-drag"
+          className="font-medium cursor-pointer titlebar-no-drag"
           onClick={() => setActivePanel('dashboard')}
         >
-          iDashboard
+          <span className="text-white">iDashboard</span>
+          <span className="text-gray-500"> v0.2.0</span>
         </span>
 
         {activePanel === 'dashboard' && activeCount > 0 && (
@@ -41,7 +42,7 @@ export function TitleBar() {
         )}
       </div>
 
-      <div className="titlebar-no-drag flex items-center gap-1">
+      <div className="titlebar-no-drag flex items-center gap-1.5">
         {/* Grid edit toggle */}
         {activePanel === 'dashboard' && (
           <button

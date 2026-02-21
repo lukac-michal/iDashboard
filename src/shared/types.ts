@@ -251,6 +251,8 @@ export interface AppConfig {
     };
     nativeNotification: boolean;
     trayIconBadge: boolean;
+    popupMinSeverity: EventSeverity;
+    blinkMinSeverity: EventSeverity;
   };
   storage: {
     retentionDays: number;

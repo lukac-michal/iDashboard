@@ -5,14 +5,14 @@
 import { useState, useEffect } from 'react';
 
 export function useBlinkAnimation(
-  isAttention: boolean,
+  _isAttention: boolean,
   blinkDurationMs?: number,
   startTimestamp?: number,
 ): boolean {
   const [isBlinking, setIsBlinking] = useState(false);
 
   useEffect(() => {
-    if (!isAttention || !blinkDurationMs) {
+    if (!blinkDurationMs) {
       setIsBlinking(false);
       return;
     }
@@ -32,7 +32,7 @@ export function useBlinkAnimation(
     }, remaining);
 
     return () => clearTimeout(timer);
-  }, [isAttention, blinkDurationMs, startTimestamp]);
+  }, [blinkDurationMs, startTimestamp]);
 
   return isBlinking;
 }

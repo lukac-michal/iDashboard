@@ -133,6 +133,8 @@ export const appConfigSchema = z.object({
     }).default({}),
     nativeNotification: z.boolean().default(true),
     trayIconBadge: z.boolean().default(true),
+    popupMinSeverity: z.enum(['info', 'warning', 'error', 'critical', 'attention']).default('info'),
+    blinkMinSeverity: z.enum(['info', 'warning', 'error', 'critical', 'attention']).default('info'),
   }).default({}),
   storage: z.object({
     retentionDays: z.number().int().positive().default(30),

@@ -61,6 +61,9 @@ interface DashboardState {
   // Rules
   rules: CrossConnectorRule[];
 
+  // Global event counter (monotonically increasing)
+  eventCounter: number;
+
   // Actions
   pushEvent: (event: ConnectorEvent) => void;
   dismissEvent: (eventId: string) => void;
@@ -101,11 +104,14 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   currentThemeName: 'dark',
   aggregates: [],
   rules: [],
+  eventCounter: 0,
 
   pushEvent: (event) => {
     set((state) => {
+      const nextCounter = state.eventCounter + 1;
+      const taggedEvent = { ...event, _seq: nextCounter } as ConnectorEvent & { _seq: number };
       const events = new Map(state.events);
-      events.set(event.id, event);
+      events.set(event.id, taggedEvent);
 
       if (events.size > 1000) {
         const oldest = [...events.keys()].slice(0, events.size - 1000);
@@ -116,7 +122,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         .filter(e => !e.dismissed)
         .sort((a, b) => b.timestamp - a.timestamp);
 
-      return { events, activeEvents };
+      return { events, activeEvents, eventCounter: nextCounter };
     });
   },
 
@@ -135,14 +141,18 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
 
   setEvents: (events) => {
     const map = new Map<string, ConnectorEvent>();
-    for (const event of events) {
-      map.set(event.id, event);
+    // Sort oldest-first so _seq numbers are chronological
+    const sorted = [...events].sort((a, b) => a.timestamp - b.timestamp);
+    let counter = 0;
+    for (const event of sorted) {
+      counter++;
+      map.set(event.id, { ...event, _seq: counter } as ConnectorEvent & { _seq: number });
     }
-    const activeEvents = events
+    const activeEvents = [...map.values()]
       .filter(e => !e.dismissed)
       .sort((a, b) => b.timestamp - a.timestamp);
 
-    set({ events: map, activeEvents });
+    set({ events: map, activeEvents, eventCounter: counter });
   },
 
   setConnectors: (connectors) => set({ connectors }),

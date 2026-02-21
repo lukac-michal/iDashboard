@@ -2,6 +2,19 @@
 // iDashboard - Shared Constants
 // ============================================================
 
+// Severity levels ordered from lowest to highest
+export const SEVERITY_ORDER: Record<string, number> = {
+  info: 0,
+  warning: 1,
+  error: 2,
+  critical: 3,
+  attention: 4,
+};
+
+export function meetsMinSeverity(severity: string, minSeverity: string): boolean {
+  return (SEVERITY_ORDER[severity] ?? 0) >= (SEVERITY_ORDER[minSeverity] ?? 0);
+}
+
 export const DEFAULT_PORT = 19280;
 export const DEFAULT_BIND = '127.0.0.1';
 

@@ -72,6 +72,10 @@ export function registerIPCHandlers(ctx: IPCContext): void {
     params?: unknown;
   }) => {
     await ctx.engine.executeAction(connectorId, actionId, params);
+    // When user clicks Focus Terminal, lower the dashboard so it's not blocking
+    if (actionId === 'focus') {
+      ctx.windowManager.cancelTemporaryAlwaysOnTop();
+    }
   });
 
   // --- Window ---

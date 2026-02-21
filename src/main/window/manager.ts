@@ -3,6 +3,7 @@
 // ============================================================
 
 import { BrowserWindow, screen } from 'electron';
+import { log } from '../utils/log';
 import type { WindowConfig, DockPosition, WindowMode } from '@shared/types';
 
 export class WindowManager {
@@ -110,18 +111,22 @@ export class WindowManager {
 
   /** Surface window as always-on-top temporarily for a notification */
   surfaceForNotification(): void {
-    if (!this.window) return;
+    if (!this.window) {
+      log('Window', 'surfaceForNotification: no window');
+      return;
+    }
 
     const notifConfig = this.config.alwaysOnTop.onNotification;
-    if (!notifConfig.enabled) return;
+    if (!notifConfig.enabled) {
+      log('Window', 'surfaceForNotification: disabled in config');
+      return;
+    }
 
     // Show and bring to front
+    log('Window', `surfaceForNotification: showing window (visible=${this.window.isVisible()}, minimized=${this.window.isMinimized()})`);
     this.window.show();
     this.window.setAlwaysOnTop(true, 'floating');
     this.window.focus();
-
-    // Flash
-    this.startFlash(notifConfig.flashCount, notifConfig.flashIntervalMs);
 
     // Set timer to revert
     if (this.alwaysOnTopTimer) clearTimeout(this.alwaysOnTopTimer);

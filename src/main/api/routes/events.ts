@@ -7,6 +7,7 @@ import type { APIContext } from '../server';
 import { API_PREFIX } from '@shared/constants';
 import type { PushEventRequest } from '@shared/types';
 import { recordEventReceived, recordError } from './health';
+import { log, warn } from '../../utils/log';
 
 export function registerEventRoutes(server: FastifyInstance, ctx: APIContext): void {
   // Push an event
@@ -17,11 +18,11 @@ export function registerEventRoutes(server: FastifyInstance, ctx: APIContext): v
       ...raw,
       connector: raw.connector ?? raw.connectorId ?? '',
     };
-    console.log(`[API] POST /events received from connector=${body.connector || 'unknown'} title="${body.title ?? ''}"`);
+    log('API', `POST /events received from connector=${body.connector || 'unknown'} severity=${body.severity ?? 'unset'} title="${body.title ?? ''}"`);
 
     if (!body.connector && !body.title) {
       const msg = 'Missing connector or title';
-      console.log(`[API] POST /events rejected: ${msg}`);
+      warn('API', `POST /events rejected: ${msg}`);
       recordError(msg);
       return reply.code(400).send({ ok: false, error: msg });
     }
@@ -30,7 +31,7 @@ export function registerEventRoutes(server: FastifyInstance, ctx: APIContext): v
     if (ctx.config.events.deduplication.enabled && body.title) {
       const connectorId = body.connector ?? 'generic-push';
       if (ctx.eventStore.isDuplicate(connectorId, body.title, ctx.config.events.deduplication.windowMs)) {
-        console.log(`[API] POST /events deduplicated: "${body.title}"`);
+        log('API', `POST /events DEDUPLICATED (window=${ctx.config.events.deduplication.windowMs}ms): "${body.title}"`);
         return reply.code(200).send({ ok: true, data: { deduplicated: true } });
       }
     }
@@ -39,7 +40,7 @@ export function registerEventRoutes(server: FastifyInstance, ctx: APIContext): v
 
     if (!event) {
       const msg = `Failed to process event from connector=${body.connector}`;
-      console.log(`[API] POST /events ${msg}`);
+      warn('API', `POST /events ${msg}`);
       recordError(msg);
       return reply.code(422).send({ ok: false, error: 'Failed to process event' });
     }
@@ -49,7 +50,7 @@ export function registerEventRoutes(server: FastifyInstance, ctx: APIContext): v
     ctx.broadcastEvent(event);
 
     recordEventReceived(event.connectorId, event.title);
-    console.log(`[API] POST /events OK: id=${event.id} severity=${event.severity} connector=${event.connectorId}`);
+    log('API', `POST /events OK: id=${event.id} severity=${event.severity} connector=${event.connectorId}`);
     return reply.code(201).send({ ok: true, data: { id: event.id } });
   });
 

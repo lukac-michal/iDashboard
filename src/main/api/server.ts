@@ -8,6 +8,7 @@ import { API_PREFIX } from '@shared/constants';
 import type { AppConfig } from '@shared/types';
 import { registerEventRoutes } from './routes/events';
 import { registerActionRoutes } from './routes/actions';
+import { log, error as logError } from '../utils/log';
 import { registerConnectorRoutes } from './routes/connectors';
 import { registerWebhookRoutes } from './routes/webhooks';
 import { registerHealthRoutes } from './routes/health';
@@ -77,9 +78,9 @@ export async function startAPIServer(
 ): Promise<void> {
   try {
     await server.listen({ port, host: bind });
-    console.log(`[API] Server listening on ${bind}:${port}`);
+    log('API', `Server listening on ${bind}:${port}`);
   } catch (err) {
-    console.error('[API] Failed to start server:', err);
+    logError('API', 'Failed to start server:', err);
     throw err;
   }
 }

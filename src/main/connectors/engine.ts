@@ -12,6 +12,7 @@ import { SlackConnector } from './slack';
 import { GenericHttpConnector } from './generic-http';
 import { GenericPushConnector } from './generic-push';
 import { CircuitBreaker } from '@main/services/circuit-breaker';
+import { log, warn, error as logError } from '@main/utils/log';
 import type { AuthManager } from '@main/services/auth-manager';
 import type { ConnectorConfig, ConnectorEvent, ConnectorHealth, ConnectorStatus } from '@shared/types';
 import { CONNECTOR_TYPES } from '@shared/constants';
@@ -41,7 +42,7 @@ export class ConnectorEngine {
 
   private emitEvent(event: ConnectorEvent): void {
     for (const cb of this.eventCallbacks) {
-      try { cb(event); } catch (e) { console.error('[Engine] Event callback error:', e); }
+      try { cb(event); } catch (e) { logError('Engine', 'Event callback error:', e); }
     }
   }
 
@@ -53,7 +54,7 @@ export class ConnectorEngine {
 
     const connector = this.createConnector(config.type);
     if (!connector) {
-      console.warn(`[Engine] Unknown connector type: ${config.type}`);
+      warn('Engine', ` Unknown connector type: ${config.type}`);
       return;
     }
 
@@ -65,9 +66,9 @@ export class ConnectorEngine {
 
     try {
       await connector.initialize(config, this.authManager);
-      console.log(`[Engine] Initialized connector: ${config.id} (${config.type})`);
+      log('Engine', ` Initialized connector: ${config.id} (${config.type})`);
     } catch (err) {
-      console.error(`[Engine] Failed to initialize ${config.id}:`, err);
+      logError('Engine', ` Failed to initialize ${config.id}:`, err);
       circuitBreaker.recordFailure(String(err));
       return;
     }
@@ -86,7 +87,7 @@ export class ConnectorEngine {
     if (managed.timer) clearInterval(managed.timer);
     await managed.connector.destroy();
     this.connectors.delete(id);
-    console.log(`[Engine] Removed connector: ${id}`);
+    log('Engine', ` Removed connector: ${id}`);
   }
 
   /** Process an inbound push event */
@@ -119,7 +120,7 @@ export class ConnectorEngine {
     }
 
     if (!managed || !managed.connector.normalizeInbound) {
-      console.warn(`[Engine] No push handler for connector: ${targetConnector}`);
+      warn('Engine', ` No push handler for connector: ${targetConnector}`);
       return null;
     }
 
@@ -128,7 +129,7 @@ export class ConnectorEngine {
       this.emitEvent(event);
       return event;
     } catch (err) {
-      console.error(`[Engine] Push event normalization failed:`, err);
+      logError('Engine', ` Push event normalization failed:`, err);
       return null;
     }
   }
@@ -227,7 +228,7 @@ export class ConnectorEngine {
         }
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
-        console.error(`[Engine] Poll failed for ${managed.config.id}: ${errMsg}`);
+        logError('Engine', ` Poll failed for ${managed.config.id}: ${errMsg}`);
 
         // Classify error
         let reachability: ConnectorHealth['reachability'] = 'http-failed';

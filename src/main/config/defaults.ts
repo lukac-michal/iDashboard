@@ -71,6 +71,8 @@ export const DEFAULT_CONFIG: AppConfig = {
     },
     nativeNotification: true,
     trayIconBadge: true,
+    popupMinSeverity: 'info' as const,
+    blinkMinSeverity: 'info' as const,
   },
   storage: {
     retentionDays: 30,
