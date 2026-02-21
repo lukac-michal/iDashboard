@@ -8,11 +8,13 @@ import type { WindowConfig, DockPosition, WindowMode } from '@shared/types';
 export class WindowManager {
   private window: BrowserWindow | null = null;
   private config: WindowConfig;
+  private preloadPath?: string;
   private alwaysOnTopTimer?: ReturnType<typeof setTimeout>;
   private flashTimer?: ReturnType<typeof setInterval>;
 
-  constructor(config: WindowConfig) {
+  constructor(config: WindowConfig, preloadPath?: string) {
     this.config = config;
+    this.preloadPath = preloadPath;
   }
 
   createWindow(): BrowserWindow {
@@ -35,7 +37,7 @@ export class WindowManager {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
-        preload: undefined, // Set externally
+        preload: this.preloadPath,
         sandbox: true,
       },
     });

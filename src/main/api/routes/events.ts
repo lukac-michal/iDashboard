@@ -6,20 +6,31 @@ import type { FastifyInstance } from 'fastify';
 import type { APIContext } from '../server';
 import { API_PREFIX } from '@shared/constants';
 import type { PushEventRequest } from '@shared/types';
+import { recordEventReceived, recordError } from './health';
 
 export function registerEventRoutes(server: FastifyInstance, ctx: APIContext): void {
   // Push an event
   server.post(`${API_PREFIX}/events`, async (request, reply) => {
-    const body = request.body as PushEventRequest;
+    const raw = request.body as PushEventRequest & { connectorId?: string };
+    // Accept both "connector" and "connectorId" field names
+    const body: PushEventRequest = {
+      ...raw,
+      connector: raw.connector ?? raw.connectorId ?? '',
+    };
+    console.log(`[API] POST /events received from connector=${body.connector || 'unknown'} title="${body.title ?? ''}"`);
 
-    if (!body || (!body.connector && !body.title)) {
-      return reply.code(400).send({ ok: false, error: 'Missing connector or title' });
+    if (!body.connector && !body.title) {
+      const msg = 'Missing connector or title';
+      console.log(`[API] POST /events rejected: ${msg}`);
+      recordError(msg);
+      return reply.code(400).send({ ok: false, error: msg });
     }
 
     // Deduplication check
     if (ctx.config.events.deduplication.enabled && body.title) {
       const connectorId = body.connector ?? 'generic-push';
       if (ctx.eventStore.isDuplicate(connectorId, body.title, ctx.config.events.deduplication.windowMs)) {
+        console.log(`[API] POST /events deduplicated: "${body.title}"`);
         return reply.code(200).send({ ok: true, data: { deduplicated: true } });
       }
     }
@@ -27,16 +38,18 @@ export function registerEventRoutes(server: FastifyInstance, ctx: APIContext): v
     const event = ctx.engine.handlePushEvent(body.connector ?? 'generic-push', body);
 
     if (!event) {
+      const msg = `Failed to process event from connector=${body.connector}`;
+      console.log(`[API] POST /events ${msg}`);
+      recordError(msg);
       return reply.code(422).send({ ok: false, error: 'Failed to process event' });
     }
 
-    // Persist to database
-    ctx.eventStore.insert(event);
-    ctx.aggregator.recordEvent(event);
-
-    // Broadcast to WebSocket clients
+    // Note: engine.handlePushEvent -> emitEvent -> onEvent callback already
+    // persists to DB and pushes to renderer. We only broadcast to WS clients here.
     ctx.broadcastEvent(event);
 
+    recordEventReceived(event.connectorId, event.title);
+    console.log(`[API] POST /events OK: id=${event.id} severity=${event.severity} connector=${event.connectorId}`);
     return reply.code(201).send({ ok: true, data: { id: event.id } });
   });
 

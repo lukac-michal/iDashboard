@@ -99,18 +99,20 @@ async function bootstrap(): Promise<void> {
   networkService.initialize(net.isOnline());
   networkService.startVpnPolling(config.network.vpnInterfaceCheckIntervalSec * 1000);
 
-  // Electron online/offline events (net module is an EventEmitter at runtime)
-  const netEmitter = net as unknown as import('node:events').EventEmitter;
-  netEmitter.on('online', () => {
-    networkService.setOnline(true);
-    connectorEngine.resumeAll();
-    pushToRenderer(windowManager.getWindow(), IPC.NETWORK_CHANGED, { state: 'online' });
-  });
-  netEmitter.on('offline', () => {
-    networkService.setOnline(false);
-    connectorEngine.pauseAll();
-    pushToRenderer(windowManager.getWindow(), IPC.NETWORK_CHANGED, { state: 'offline' });
-  });
+  // Electron online/offline events via powerMonitor / polling
+  setInterval(() => {
+    const online = net.isOnline();
+    const prev = networkService.isOnline;
+    if (online !== prev) {
+      networkService.setOnline(online);
+      if (online) {
+        connectorEngine.resumeAll();
+      } else {
+        connectorEngine.pauseAll();
+      }
+      pushToRenderer(windowManager.getWindow(), IPC.NETWORK_CHANGED, { state: online ? 'online' : 'offline' });
+    }
+  }, 5000);
 
   // --- Connector SDK (Plugins) ---
   const connectorSDK = new ConnectorSDK();
@@ -152,12 +154,9 @@ async function bootstrap(): Promise<void> {
   }
 
   // --- Window ---
-  windowManager = new WindowManager(config.window);
-  const mainWindow = windowManager.createWindow();
-
-  // Set preload
   const preloadPath = path.join(__dirname, '../preload/index.js');
-  mainWindow.webContents.session.setPreloads([preloadPath]);
+  windowManager = new WindowManager(config.window, preloadPath);
+  const mainWindow = windowManager.createWindow();
 
   // Load renderer
   if (process.env.ELECTRON_RENDERER_URL) {
