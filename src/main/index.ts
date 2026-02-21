@@ -99,13 +99,14 @@ async function bootstrap(): Promise<void> {
   networkService.initialize(net.isOnline());
   networkService.startVpnPolling(config.network.vpnInterfaceCheckIntervalSec * 1000);
 
-  // Electron online/offline events
-  net.on('online', () => {
+  // Electron online/offline events (net module is an EventEmitter at runtime)
+  const netEmitter = net as unknown as import('node:events').EventEmitter;
+  netEmitter.on('online', () => {
     networkService.setOnline(true);
     connectorEngine.resumeAll();
     pushToRenderer(windowManager.getWindow(), IPC.NETWORK_CHANGED, { state: 'online' });
   });
-  net.on('offline', () => {
+  netEmitter.on('offline', () => {
     networkService.setOnline(false);
     connectorEngine.pauseAll();
     pushToRenderer(windowManager.getWindow(), IPC.NETWORK_CHANGED, { state: 'offline' });

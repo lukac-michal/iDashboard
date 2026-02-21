@@ -64,7 +64,10 @@ export class WebhookReceiver {
       .update(rawBody)
       .digest('hex');
 
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    const sigBuf = Buffer.from(signature);
+    const expBuf = Buffer.from(expected);
+    if (sigBuf.length !== expBuf.length) return false;
+    return crypto.timingSafeEqual(sigBuf, expBuf);
   }
 
   private parseGitHub(payload: WebhookPayload): ConnectorEvent[] {
@@ -159,9 +162,12 @@ export class WebhookReceiver {
       .update(rawBody)
       .digest('hex');
 
-    return sigs.some(sig =>
-      crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)),
-    );
+    const expBuf = Buffer.from(expected);
+    return sigs.some(sig => {
+      const sigBuf = Buffer.from(sig);
+      if (sigBuf.length !== expBuf.length) return false;
+      return crypto.timingSafeEqual(sigBuf, expBuf);
+    });
   }
 
   private parsePagerDuty(payload: WebhookPayload): ConnectorEvent[] {
@@ -181,6 +187,31 @@ export class WebhookReceiver {
       : 'info';
 
     return [this.createEvent(title, severity, eventType, undefined, body)];
+  }
+
+  // --- Bitbucket ---
+
+  private verifyBitbucket(headers: Record<string, string>, rawBody: string): boolean {
+    // Bitbucket Cloud does not support HMAC signatures by default.
+    // If a secret is configured, verify using the shared secret as a bearer token
+    // sent in the X-Hub-Signature header (Bitbucket Server uses this pattern).
+    const signature = headers['x-hub-signature'] ?? headers['X-Hub-Signature'];
+    if (!signature) {
+      // Fallback: check for a shared secret header (Bitbucket Server webhook secret)
+      const token = headers['x-webhook-secret'] ?? headers['X-Webhook-Secret'];
+      return !this.config.secret || token === this.config.secret;
+    }
+
+    const expected = 'sha256=' + crypto
+      .createHmac('sha256', this.config.secret!)
+      .update(rawBody)
+      .digest('hex');
+
+    try {
+      return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    } catch {
+      return false;
+    }
   }
 
   // --- Generic ---

@@ -11,6 +11,7 @@ import type {
   CrossConnectorRule,
   RuleCondition,
   RuleAction,
+  GridLayoutItem,
 } from '@shared/types';
 import { CONNECTOR_TYPES } from '@shared/constants';
 
@@ -392,7 +393,7 @@ function AppearanceSettings() {
           onClick={async () => {
             const saved = await window.iDashboard?.loadLayout('default') as { items?: unknown[] } | null;
             if (saved?.items) {
-              useDashboardStore.getState().setGridLayout(saved.items as Parameters<typeof useDashboardStore.getState>['0'] extends never ? never : any);
+              useDashboardStore.getState().setGridLayout(saved.items as GridLayoutItem[]);
             }
           }}
           className="px-3 py-1.5 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
