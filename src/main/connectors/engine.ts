@@ -4,6 +4,7 @@
 
 import { BaseConnector } from './base';
 import { ClaudeCodeConnector } from './claude-code';
+import { CursorConnector } from './cursor';
 import { TeamCityConnector } from './teamcity';
 import { OctopusDeployConnector } from './octopus-deploy';
 import { GraylogConnector } from './graylog';
@@ -157,6 +158,11 @@ export class ConnectorEngine {
     return this.connectors.get(id)?.connector;
   }
 
+  /** Get the full config for a connector (for editing in Settings UI) */
+  getConnectorConfig(id: string): ConnectorConfig | undefined {
+    return this.connectors.get(id)?.config;
+  }
+
   /** Execute an action on a connector */
   async executeAction(connectorId: string, actionId: string, params?: unknown): Promise<void> {
     const managed = this.connectors.get(connectorId);
@@ -253,6 +259,8 @@ export class ConnectorEngine {
     switch (type) {
       case CONNECTOR_TYPES.CLAUDE_CODE:
         return new ClaudeCodeConnector();
+      case CONNECTOR_TYPES.CURSOR:
+        return new CursorConnector();
       case CONNECTOR_TYPES.TEAMCITY:
         return new TeamCityConnector();
       case CONNECTOR_TYPES.OCTOPUS_DEPLOY:

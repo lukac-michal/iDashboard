@@ -37,6 +37,7 @@ export const COLUMN_WIDTH_UNIT = 280;
 
 export const CONNECTOR_TYPES = {
   CLAUDE_CODE: 'claude-code',
+  CURSOR: 'cursor',
   OCTOPUS_DEPLOY: 'octopus-deploy',
   TEAMCITY: 'teamcity',
   GRAYLOG: 'graylog',

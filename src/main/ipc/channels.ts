@@ -74,11 +74,12 @@ export function registerIPCHandlers(ctx: IPCContext): void {
     params?: unknown;
   }) => {
     await ctx.engine.executeAction(connectorId, actionId, params);
-    // When user clicks Focus Terminal, get the dashboard out of the way
+    // When user clicks Focus Terminal/Editor, get the dashboard out of the way
     if (actionId === 'focus') {
       ctx.windowManager.cancelTemporaryAlwaysOnTop();
-      // Lower the window so the activated app is visible immediately
-      ctx.windowManager.getWindow()?.blur();
+      // Small delay lets macOS process the target app's activate before we blur,
+      // otherwise blur can cause the wrong app to grab focus
+      setTimeout(() => ctx.windowManager.getWindow()?.blur(), 150);
     }
   });
 
@@ -131,6 +132,10 @@ export function registerIPCHandlers(ctx: IPCContext): void {
   ipcMain.handle(IPC.CONNECTORS_REMOVE, async (_event, id: string) => {
     await ctx.removeConnector(id);
     return ctx.engine.getStatuses();
+  });
+
+  ipcMain.handle(IPC.CONNECTORS_GET_CONFIG, (_event, id: string) => {
+    return ctx.engine.getConnectorConfig(id) ?? null;
   });
 
   // --- Network ---
