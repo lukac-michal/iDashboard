@@ -91,6 +91,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     },
   },
   startup: {
+    appMode: 'dock',
     launchAtLogin: false,
     startMinimized: true,
     checkForUpdates: true,

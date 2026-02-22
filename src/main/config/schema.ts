@@ -153,6 +153,7 @@ export const appConfigSchema = z.object({
     }).default({}),
   }).default({}),
   startup: z.object({
+    appMode: z.enum(['dock', 'menubar']).default('dock'),
     launchAtLogin: z.boolean().default(false),
     startMinimized: z.boolean().default(true),
     checkForUpdates: z.boolean().default(true),

@@ -106,6 +106,21 @@ function GeneralSettings() {
       </SettingRow>
 
       <SectionTitle>Startup</SectionTitle>
+      <SettingRow label="App Mode">
+        <select
+          value={config.startup.appMode}
+          onChange={e => update({ startup: { ...config.startup, appMode: e.target.value as 'dock' | 'menubar' } })}
+          className="settings-select"
+        >
+          <option value="dock">Dock App</option>
+          <option value="menubar">Menu Bar</option>
+        </select>
+      </SettingRow>
+      <div className="pl-40 -mt-1 mb-1">
+        <span className="text-[10px] text-gray-500">
+          Dock App shows in the dock. Menu Bar hides the dock icon and runs as a tray-only app.
+        </span>
+      </div>
       <SettingRow label="Launch at Login">
         <ToggleSwitch
           checked={config.startup.launchAtLogin}

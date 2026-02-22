@@ -241,6 +241,16 @@ async function bootstrap(): Promise<void> {
       if (partial.notifications?.sound) {
         soundService.configure(partial.notifications.sound as AppConfig['notifications']['sound']);
       }
+      if (partial.startup?.appMode !== undefined) {
+        if (partial.startup.appMode === 'menubar') {
+          app.dock?.hide();
+        } else {
+          app.dock?.show();
+        }
+      }
+      if (partial.startup?.launchAtLogin !== undefined) {
+        app.setLoginItemSettings({ openAtLogin: partial.startup.launchAtLogin });
+      }
       windowManager.updateConfig(config.window);
       pushToRenderer(mainWindow, IPC.CONFIG_CHANGED, config);
     },
@@ -291,6 +301,20 @@ async function bootstrap(): Promise<void> {
     },
   );
 
+  // Set dock icon in dev mode (production uses icon from app bundle)
+  if (process.platform === 'darwin') {
+    const dockIconPath = path.join(__dirname, '../../resources/icon.png');
+    app.dock?.setIcon(dockIconPath);
+  }
+
+  // Apply app mode (dock vs menu bar)
+  if (config.startup.appMode === 'menubar') {
+    app.dock?.hide();
+  }
+
+  // Wire launch-at-login to OS
+  app.setLoginItemSettings({ openAtLogin: config.startup.launchAtLogin });
+
   // Show or minimize based on config
   if (config.startup.startMinimized) {
     mainWindow.hide();
@@ -311,6 +335,15 @@ app.whenReady().then(bootstrap).catch((err) => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+app.on('activate', () => {
+  // macOS: clicking the dock icon should show the window
+  const win = windowManager?.getWindow();
+  if (win && !win.isDestroyed()) {
+    win.show();
+    win.focus();
   }
 });
 

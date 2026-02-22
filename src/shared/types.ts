@@ -271,6 +271,7 @@ export interface AppConfig {
     };
   };
   startup: {
+    appMode: 'dock' | 'menubar';
     launchAtLogin: boolean;
     startMinimized: boolean;
     checkForUpdates: boolean;
