@@ -35,6 +35,7 @@ const api = {
   addConnector: (config: unknown) => ipcRenderer.invoke(IPC.CONNECTORS_ADD, config),
   updateConnector: (config: unknown) => ipcRenderer.invoke(IPC.CONNECTORS_UPDATE, config),
   removeConnector: (id: string) => ipcRenderer.invoke(IPC.CONNECTORS_REMOVE, id),
+  getConnectorConfig: (id: string) => ipcRenderer.invoke(IPC.CONNECTORS_GET_CONFIG, id),
 
   // Network
   getNetworkStatus: () => ipcRenderer.invoke(IPC.NETWORK_STATUS),

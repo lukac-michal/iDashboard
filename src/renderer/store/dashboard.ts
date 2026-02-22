@@ -62,12 +62,16 @@ interface DashboardState {
   // Rules
   rules: CrossConnectorRule[];
 
+  // Acknowledged events (user clicked / interacted — stops blinking)
+  acknowledgedEvents: Set<string>;
+
   // Global event counter (monotonically increasing)
   eventCounter: number;
 
   // Actions
   pushEvent: (event: ConnectorEvent) => void;
   dismissEvent: (eventId: string) => void;
+  acknowledgeEvent: (eventId: string) => void;
   setEvents: (events: ConnectorEvent[]) => void;
   setConnectors: (connectors: ConnectorStatus[]) => void;
   setWindowSize: (width: number, height: number) => void;
@@ -107,6 +111,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   currentThemeName: 'dark',
   aggregates: [],
   rules: [],
+  acknowledgedEvents: new Set(),
   eventCounter: 0,
 
   pushEvent: (event) => {
@@ -139,6 +144,14 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     set((state) => {
       const activeEvents = state.activeEvents.filter(e => e.id !== eventId);
       return { activeEvents };
+    });
+  },
+
+  acknowledgeEvent: (eventId) => {
+    set((state) => {
+      const next = new Set(state.acknowledgedEvents);
+      next.add(eventId);
+      return { acknowledgedEvents: next };
     });
   },
 

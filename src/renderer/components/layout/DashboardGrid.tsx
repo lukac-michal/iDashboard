@@ -148,6 +148,7 @@ export function DashboardGrid() {
                 connector={connector}
                 events={events}
                 containerWidth={colWidth}
+                latestEventId={activeEvents[0]?.id}
                 onDismiss={dismissEvent}
                 onAction={handleAction}
               />

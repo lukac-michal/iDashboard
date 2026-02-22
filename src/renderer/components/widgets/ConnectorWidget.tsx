@@ -10,6 +10,7 @@ interface ConnectorWidgetProps {
   connector: ConnectorStatus;
   events: ConnectorEvent[];
   containerWidth: number;
+  latestEventId?: string;
   onDismiss: (eventId: string) => void;
   onAction: (connectorId: string, actionId: string, params?: unknown) => void;
 }
@@ -18,6 +19,7 @@ export function ConnectorWidget({
   connector,
   events,
   containerWidth,
+  latestEventId,
   onDismiss,
   onAction,
 }: ConnectorWidgetProps) {
@@ -49,6 +51,7 @@ export function ConnectorWidget({
             key={event.id}
             event={event}
             containerWidth={containerWidth}
+            isLatest={event.id === latestEventId}
             onDismiss={onDismiss}
             onAction={onAction}
           />

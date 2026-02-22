@@ -182,6 +182,7 @@ function ConnectorsSettings() {
   const connectors = useDashboardStore(s => s.connectors);
   const [editing, setEditing] = useState<ConnectorConfig | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [newAppName, setNewAppName] = useState('');
 
   const connectorTypes = Object.values(CONNECTOR_TYPES);
 
@@ -199,6 +200,14 @@ function ConnectorsSettings() {
     setShowAdd(true);
   };
 
+  const handleEdit = async (id: string) => {
+    const config = await window.iDashboard?.getConnectorConfig(id) as ConnectorConfig | null;
+    if (config) {
+      setEditing(config);
+      setShowAdd(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!editing) return;
     if (showAdd) {
@@ -212,6 +221,33 @@ function ConnectorsSettings() {
 
   const handleRemove = async (id: string) => {
     await window.iDashboard?.removeConnector(id);
+  };
+
+  // Terminal Apps helpers (for claude-code connector)
+  const terminalApps: string[] = (editing?.settings?.terminalApps as string[] | undefined) ?? [];
+
+  const setTerminalApps = (apps: string[]) => {
+    if (!editing) return;
+    setEditing({ ...editing, settings: { ...editing.settings, terminalApps: apps } });
+  };
+
+  const moveApp = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= terminalApps.length) return;
+    const apps = [...terminalApps];
+    [apps[index], apps[target]] = [apps[target], apps[index]];
+    setTerminalApps(apps);
+  };
+
+  const removeApp = (index: number) => {
+    setTerminalApps(terminalApps.filter((_, i) => i !== index));
+  };
+
+  const addApp = () => {
+    const name = newAppName.trim();
+    if (!name || terminalApps.includes(name)) return;
+    setTerminalApps([...terminalApps, name]);
+    setNewAppName('');
   };
 
   if (editing) {
@@ -294,6 +330,56 @@ function ConnectorsSettings() {
           />
         </SettingRow>
 
+        {/* Terminal Apps editor for claude-code connectors */}
+        {editing.type === 'claude-code' && (
+          <>
+            <SectionTitle>Terminal Apps</SectionTitle>
+            <div className="text-[10px] text-gray-500 -mt-1 mb-1">
+              Apps are searched in order when focusing terminal. First app is the fallback.
+            </div>
+            <div className="space-y-1">
+              {terminalApps.map((app, i) => (
+                <div key={i} className="flex items-center gap-1 bg-gray-900/50 rounded px-2 py-1 border border-gray-800/30">
+                  <span className="text-xs text-gray-200 flex-1">{app}</span>
+                  <button
+                    onClick={() => moveApp(i, -1)}
+                    disabled={i === 0}
+                    className="text-[10px] text-gray-400 hover:text-gray-200 disabled:opacity-30 px-1"
+                    title="Move up"
+                  >^</button>
+                  <button
+                    onClick={() => moveApp(i, 1)}
+                    disabled={i === terminalApps.length - 1}
+                    className="text-[10px] text-gray-400 hover:text-gray-200 disabled:opacity-30 px-1"
+                    title="Move down"
+                  >v</button>
+                  <button
+                    onClick={() => removeApp(i)}
+                    className="text-[10px] text-red-400 hover:text-red-300 px-1"
+                    title="Remove"
+                  >x</button>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-1">
+              <input
+                value={newAppName}
+                onChange={e => setNewAppName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') addApp(); }}
+                placeholder="App name (e.g. Warp)"
+                className="settings-input flex-1"
+              />
+              <button
+                onClick={addApp}
+                disabled={!newAppName.trim()}
+                className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-40"
+              >
+                Add
+              </button>
+            </div>
+          </>
+        )}
+
         <div className="pt-3">
           <button onClick={handleSave} className="px-4 py-1.5 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-500">
             {showAdd ? 'Add Connector' : 'Save Changes'}
@@ -328,6 +414,12 @@ function ConnectorsSettings() {
                 <div className="text-sm font-medium text-gray-200 truncate">{c.displayName}</div>
                 <div className="text-[10px] text-gray-500">{c.type} · {c.id}</div>
               </div>
+              <button
+                onClick={() => handleEdit(c.id)}
+                className="text-xs text-indigo-400 hover:text-indigo-300 px-2 py-1"
+              >
+                Edit
+              </button>
               <button
                 onClick={() => handleRemove(c.id)}
                 className="text-xs text-red-400 hover:text-red-300 px-2 py-1"
@@ -812,7 +904,7 @@ function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (valu
       }`}
     >
       <span
-        className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white transition-transform ${
+        className={`absolute left-0 top-0.5 w-3.5 h-3.5 rounded-full bg-white transition-transform ${
           checked ? 'translate-x-4' : 'translate-x-0.5'
         }`}
       />

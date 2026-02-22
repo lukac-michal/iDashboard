@@ -68,6 +68,7 @@ export const IPC = {
   CONNECTORS_UPDATE: 'connectors:update',
   CONNECTORS_ADD: 'connectors:add',
   CONNECTORS_REMOVE: 'connectors:remove',
+  CONNECTORS_GET_CONFIG: 'connectors:get-config',
 
   // Connector health details
   CONNECTOR_HEALTH_ALL: 'connector:health-all',

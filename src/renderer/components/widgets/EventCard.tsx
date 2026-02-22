@@ -2,7 +2,8 @@
 // EventCard - Single event display with adaptive sizing
 // ============================================================
 
-import { useBlinkAnimation } from '@renderer/hooks/useBlinkAnimation';
+import { useDashboardStore } from '@renderer/store/dashboard';
+import { useBlinkState } from '@renderer/hooks/useBlinkAnimation';
 import { SeverityBadge } from '@renderer/components/common/SeverityBadge';
 import { ActionButton } from '@renderer/components/common/ActionButton';
 import type { ConnectorEvent } from '@shared/types';
@@ -10,24 +11,22 @@ import type { ConnectorEvent } from '@shared/types';
 interface EventCardProps {
   event: ConnectorEvent;
   containerWidth: number;
+  isLatest?: boolean;
   onDismiss: (eventId: string) => void;
   onAction: (connectorId: string, actionId: string, params?: unknown) => void;
 }
 
-export function EventCard({ event, containerWidth, onDismiss, onAction }: EventCardProps) {
+export function EventCard({ event, containerWidth, isLatest, onDismiss, onAction }: EventCardProps) {
   const isAttention = event.severity === 'attention' || event.severity === 'critical';
-  const isBlinking = useBlinkAnimation(
-    isAttention,
-    event.uiHints?.blinkDurationMs,
-    event.timestamp,
-  );
+  const acknowledgeEvent = useDashboardStore(s => s.acknowledgeEvent);
+  const isBlinking = useBlinkState(isLatest ?? false, event.id, event.timestamp);
 
   const showTitle = containerWidth >= 150;
   const showBody = containerWidth >= 300;
   const showActions = containerWidth >= 250;
   const showActionLabels = containerWidth >= 350;
 
-  const borderColor = event.uiHints?.color ?? '#6366f1';
+  const borderColor = isAttention ? '#ef4444' : (event.uiHints?.color ?? '#6366f1');
   const timeAgo = formatTimeAgo(event.timestamp);
 
   const hasFocusAction = event.uiHints?.actionButtons?.some(a => a.id === 'focus');
@@ -36,6 +35,7 @@ export function EventCard({ event, containerWidth, onDismiss, onAction }: EventC
     ?? event.body?.match(/Session:\s*(.+)/)?.[1];
 
   const handleCardClick = () => {
+    acknowledgeEvent(event.id);
     if (hasFocusAction) {
       onAction(event.connectorId, 'focus', { sessionName });
     }

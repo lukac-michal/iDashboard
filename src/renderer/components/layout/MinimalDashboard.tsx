@@ -5,11 +5,8 @@
 
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useDashboardStore } from '@renderer/store/dashboard';
-import { useBlinkAnimation } from '@renderer/hooks/useBlinkAnimation';
-import { SeverityBadge } from '@renderer/components/common/SeverityBadge';
+import { useBlinkState } from '@renderer/hooks/useBlinkAnimation';
 import type { ConnectorEvent } from '@shared/types';
-
-const RECENT_WINDOW_MS = 60_000;
 
 export function MinimalDashboard() {
   const activeEvents = useDashboardStore(s => s.activeEvents);
@@ -44,18 +41,11 @@ export function MinimalDashboard() {
 
   const selectAll = useCallback(() => setSelectedConnectors(new Set()), []);
 
-  // Filter by connector, then pick recent events
+  // Filter by connector
   const displayEvents = useMemo(() => {
-    const filtered = activeEvents.filter(e =>
+    return activeEvents.filter(e =>
       allSelected || selectedConnectors.has(e.connectorId),
     );
-
-    const now = Date.now();
-    const recent = filtered.filter(e => now - e.timestamp < RECENT_WINDOW_MS);
-
-    // Show recent events, or the single most recent if none are within the window
-    if (recent.length > 0) return recent;
-    return filtered.length > 0 ? [filtered[0]] : [];
   }, [activeEvents, selectedConnectors, allSelected]);
 
   // Auto-scroll to top when new events arrive
@@ -99,14 +89,30 @@ export function MinimalDashboard() {
         </div>
       ) : (
         <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-1.5 flex flex-col gap-1.5">
-          {displayEvents.map(event => (
+          {displayEvents.map((event, i) => (
             <MinimalEventCard
               key={event.id}
               event={event}
+              isLatest={i === 0}
               connectorName={connectors.find(c => c.id === event.connectorId)?.displayName ?? event.connectorId}
               onDismiss={dismissEvent}
               onAction={handleAction}
             />
+          ))}
+        </div>
+      )}
+
+      {/* Connector status bar */}
+      {connectors.length > 0 && (
+        <div className="flex items-center gap-3 px-4 py-1.5 border-t border-gray-800/50 bg-gray-900/60 flex-shrink-0">
+          {connectors.map(c => (
+            <div key={c.id} className="flex items-center gap-1.5" title={`${c.displayName} — ${c.connected ? 'connected' : 'disconnected'}${c.eventCount ? ` · ${c.eventCount} events` : ''}`}>
+              <div
+                className="w-2 h-2 rounded-full flex-shrink-0"
+                style={{ backgroundColor: c.connected ? '#22c55e' : '#6b7280' }}
+              />
+              <span className="text-[10px] text-gray-500 truncate max-w-20">{c.displayName}</span>
+            </div>
           ))}
         </div>
       )}
@@ -116,15 +122,17 @@ export function MinimalDashboard() {
 
 // --- Compact event card for minimal view ---
 
-function MinimalEventCard({ event, connectorName, onDismiss, onAction }: {
+function MinimalEventCard({ event, isLatest, connectorName, onDismiss, onAction }: {
   event: ConnectorEvent;
+  isLatest: boolean;
   connectorName: string;
   onDismiss: (id: string) => void;
   onAction: (connectorId: string, actionId: string, params?: unknown) => void;
 }) {
   const isAttention = event.severity === 'attention' || event.severity === 'critical';
-  const isBlinking = useBlinkAnimation(isAttention, event.uiHints?.blinkDurationMs, event.timestamp);
-  const borderColor = event.uiHints?.color ?? '#6366f1';
+  const borderColor = isAttention ? '#ef4444' : (event.uiHints?.color ?? '#6366f1');
+  const acknowledgeEvent = useDashboardStore(s => s.acknowledgeEvent);
+  const isBlinking = useBlinkState(isLatest, event.id, event.timestamp);
 
   const hasFocusAction = event.uiHints?.actionButtons?.some(a => a.id === 'focus');
   const rawSessionId = (event.metadata as Record<string, string>)?.sessionId;
@@ -132,6 +140,7 @@ function MinimalEventCard({ event, connectorName, onDismiss, onAction }: {
     ?? event.body?.match(/Session:\s*(.+)/)?.[1];
 
   const handleClick = () => {
+    acknowledgeEvent(event.id);
     if (hasFocusAction) {
       onAction(event.connectorId, 'focus', { sessionName });
     }
@@ -154,14 +163,14 @@ function MinimalEventCard({ event, connectorName, onDismiss, onAction }: {
         {isAttention ? '⚡' : event.severity === 'error' ? '✕' : '●'}
       </div>
 
-      {/* Title */}
-      <span className="text-xs truncate flex-1 min-w-0">{event.title}</span>
+      {/* Title — prefer body in minimal mode; strip redundant prefixes */}
+      <span className="text-xs truncate flex-1 min-w-0">
+        {minimalText(event.body, event.title, connectorName)}
+      </span>
 
       {/* Connector + time */}
       <span className="text-[10px] text-gray-500 flex-shrink-0">{connectorName}</span>
       <span className="text-[10px] text-gray-600 flex-shrink-0">{timeAgo}</span>
-
-      <SeverityBadge severity={event.severity} />
 
       {/* Dismiss button */}
       <button
@@ -173,4 +182,20 @@ function MinimalEventCard({ event, connectorName, onDismiss, onAction }: {
       </button>
     </div>
   );
+}
+
+/** Build minimal display text: prefer body, fall back to title; strip redundant prefixes */
+function minimalText(body: string | undefined, title: string, connectorName: string): string {
+  let text = body || stripPrefix(title, connectorName);
+  // Strip "Session: " prefix — the icon already conveys context
+  text = text.replace(/^Session:\s*/i, '');
+  return text;
+}
+
+function stripPrefix(title: string, connectorName: string): string {
+  for (const sep of [': ', ' - ', ' — ', ' ']) {
+    const prefix = connectorName + sep;
+    if (title.startsWith(prefix)) return title.slice(prefix.length);
+  }
+  return title;
 }

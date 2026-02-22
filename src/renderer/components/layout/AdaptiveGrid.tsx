@@ -123,6 +123,7 @@ export function AdaptiveGrid() {
   const orphanEvents = [...eventsByConnector.entries()]
     .filter(([id]) => !connectorIds.has(id));
 
+  const latestEventId = filteredEvents[0]?.id;
   const colWidth = Math.floor(width / columns);
 
   // Count how many connectors actually have events to display
@@ -207,6 +208,7 @@ export function AdaptiveGrid() {
             connector={connector}
             events={events}
             containerWidth={effectiveColWidth}
+            latestEventId={latestEventId}
             onDismiss={dismissEvent}
             onAction={handleAction}
           />
@@ -226,6 +228,7 @@ export function AdaptiveGrid() {
           }}
           events={events}
           containerWidth={effectiveColWidth}
+          latestEventId={latestEventId}
           onDismiss={dismissEvent}
           onAction={handleAction}
         />

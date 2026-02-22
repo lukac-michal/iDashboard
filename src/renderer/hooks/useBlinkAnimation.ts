@@ -1,27 +1,36 @@
 // ============================================================
-// useBlinkAnimation - Track blink state for attention events
+// useBlinkState - Blink the latest event's icon for up to 60s
+// Stops when acknowledged (clicked) or when 60s elapsed.
 // ============================================================
 
 import { useState, useEffect } from 'react';
+import { useDashboardStore } from '@renderer/store/dashboard';
 
-const DEFAULT_BLINK_DURATION_MS = 10_000;
+const BLINK_MAX_MS = 60_000;
 
-export function useBlinkAnimation(
-  isAttention: boolean,
-  blinkDurationMs?: number,
-  startTimestamp?: number,
+/**
+ * Returns true if this event should be blinking right now.
+ * Blinks only if `isLatest` is true, not yet acknowledged,
+ * and the event arrived less than 60 seconds ago.
+ */
+export function useBlinkState(
+  isLatest: boolean,
+  eventId: string,
+  eventTimestamp: number,
 ): boolean {
+  const isAcknowledged = useDashboardStore(
+    (s) => s.acknowledgedEvents.has(eventId),
+  );
+
   const [isBlinking, setIsBlinking] = useState(false);
 
   useEffect(() => {
-    if (!isAttention) {
+    if (!isLatest || isAcknowledged) {
       setIsBlinking(false);
       return;
     }
 
-    const duration = blinkDurationMs ?? DEFAULT_BLINK_DURATION_MS;
-    const start = startTimestamp ?? Date.now();
-    const remaining = duration - (Date.now() - start);
+    const remaining = BLINK_MAX_MS - (Date.now() - eventTimestamp);
 
     if (remaining <= 0) {
       setIsBlinking(false);
@@ -35,7 +44,7 @@ export function useBlinkAnimation(
     }, remaining);
 
     return () => clearTimeout(timer);
-  }, [isAttention, blinkDurationMs, startTimestamp]);
+  }, [isLatest, isAcknowledged, eventId, eventTimestamp]);
 
   return isBlinking;
 }
