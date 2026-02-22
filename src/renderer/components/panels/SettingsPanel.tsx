@@ -38,7 +38,7 @@ export function SettingsPanel() {
           <button
             key={tab.id}
             onClick={() => setSettingsTab(tab.id)}
-            className={`w-full text-left px-3 py-1.5 text-xs transition-colors ${
+            className={`w-full text-left px-4 py-2 text-xs transition-colors ${
               settingsTab === tab.id
                 ? 'text-indigo-400 bg-indigo-500/10 border-r-2 border-indigo-400'
                 : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/30'
@@ -751,7 +751,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 function SettingRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3 py-1">
+    <div className="flex items-center gap-3 py-1.5">
       <span className="text-xs text-gray-400 w-40 flex-shrink-0">{label}</span>
       <div className="flex items-center gap-1">{children}</div>
     </div>

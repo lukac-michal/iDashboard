@@ -29,7 +29,7 @@ export function NavigationBar() {
           key={tab.id}
           onClick={() => setActivePanel(tab.id)}
           className={`
-            flex-1 flex items-center justify-center gap-1.5 py-2 text-xs transition-colors
+            flex-1 flex items-center justify-center gap-2 py-2.5 text-xs transition-colors
             ${activePanel === tab.id
               ? 'text-indigo-400 bg-indigo-500/10'
               : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800/30'

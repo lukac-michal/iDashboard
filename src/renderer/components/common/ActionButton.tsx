@@ -22,7 +22,7 @@ export function ActionButton({ action, showLabel = true, onClick }: ActionButton
   return (
     <button
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-colors ${className} titlebar-no-drag`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors ${className} titlebar-no-drag`}
       title={action.label}
     >
       {showLabel && <span>{action.label}</span>}

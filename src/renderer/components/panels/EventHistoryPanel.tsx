@@ -181,7 +181,7 @@ function HistoryRow({ event }: { event: ConnectorEvent }) {
       </div>
 
       {expanded && (
-        <div className="mt-2 pl-3.5 space-y-1 animate-fade-in">
+        <div className="mt-2 pl-3.5 space-y-2 animate-fade-in">
           {event.body && (
             <p className="text-xs text-gray-400 whitespace-pre-wrap">{event.body}</p>
           )}
@@ -189,7 +189,7 @@ function HistoryRow({ event }: { event: ConnectorEvent }) {
             <p className="text-xs text-indigo-400 truncate">{event.sourceUrl}</p>
           )}
           {event.metadata && Object.keys(event.metadata).length > 0 && (
-            <pre className="text-[10px] text-gray-500 bg-gray-800/40 rounded p-1.5 overflow-auto max-h-32">
+            <pre className="text-[10px] text-gray-500 bg-gray-800/40 rounded p-2.5 overflow-auto max-h-32">
               {JSON.stringify(event.metadata, null, 2)}
             </pre>
           )}

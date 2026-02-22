@@ -30,7 +30,7 @@ export function NetworkStatusBar() {
   if (!config) return null;
 
   return (
-    <div className={`${config.bg} px-3 py-1.5 text-xs flex items-center gap-2 animate-fade-in`}>
+    <div className={`${config.bg} px-4 py-2 text-xs flex items-center gap-2 animate-fade-in`}>
       <span>{config.icon}</span>
       <span>{config.text}</span>
     </div>

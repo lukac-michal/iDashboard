@@ -35,7 +35,7 @@ export function NetworkDiagnosticsPanel() {
   return (
     <div className="flex flex-col h-full">
       {/* Overall Status */}
-      <div className={`mx-3 mt-3 p-3 rounded-lg border ${overallBg}`}>
+      <div className={`mx-4 mt-4 p-4 rounded-lg border ${overallBg}`}>
         <div className="flex items-center gap-2">
           <div className={`w-3 h-3 rounded-full ${
             networkState === 'online' ? 'bg-green-400' :
@@ -51,7 +51,7 @@ export function NetworkDiagnosticsPanel() {
       </div>
 
       {/* Connector Health List */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {detailedHealth.length === 0 ? (
           <div className="text-center text-gray-500 text-sm py-8">
             No connectors configured
@@ -110,7 +110,7 @@ function ConnectorHealthCard({ connector }: { connector: ConnectorStatus }) {
 
 function HealthDetails({ health, lastError }: { health: ConnectorHealth; lastError?: string }) {
   return (
-    <div className="mt-3 pt-2 border-t border-gray-800/30 space-y-1.5 animate-fade-in">
+    <div className="mt-3 pt-2 border-t border-gray-800/30 space-y-2 animate-fade-in">
       <DetailRow label="Circuit State" value={health.circuitState} />
       <DetailRow label="Consecutive Failures" value={String(health.consecutiveFailures)} />
       <DetailRow label="Current Backoff" value={`${health.currentBackoffMs}ms`} />
@@ -127,7 +127,7 @@ function HealthDetails({ health, lastError }: { health: ConnectorHealth; lastErr
       {(health.lastError || lastError) && (
         <div className="mt-1">
           <span className="text-[10px] text-gray-600">Last Error:</span>
-          <p className="text-[10px] text-red-400 mt-0.5 bg-red-900/10 rounded p-1.5 break-all">
+          <p className="text-[10px] text-red-400 mt-0.5 bg-red-900/10 rounded p-2.5 break-all">
             {health.lastError || lastError}
           </p>
         </div>

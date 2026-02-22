@@ -75,7 +75,7 @@ export function EventCard({ event, containerWidth, onDismiss, onAction }: EventC
             </div>
 
             {showBody && event.body && (
-              <p className="widget-body text-xs text-gray-400 mt-1.5 line-clamp-2">{event.body}</p>
+              <p className="widget-body text-xs text-gray-400 mt-2 line-clamp-2">{event.body}</p>
             )}
 
             <div className="flex items-center gap-2 mt-2">
