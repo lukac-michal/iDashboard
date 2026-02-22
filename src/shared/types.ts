@@ -183,6 +183,7 @@ export interface LayoutConfig {
 // --- Configuration Types ---
 
 export interface WindowConfig {
+  uiStyle: 'normal' | 'minimal';
   defaultMode: WindowMode;
   size: {
     width: number;
@@ -275,6 +276,9 @@ export interface AppConfig {
     launchAtLogin: boolean;
     startMinimized: boolean;
     checkForUpdates: boolean;
+  };
+  debug: {
+    enabled: boolean;
   };
 }
 
@@ -409,7 +413,7 @@ export interface AggregateResult {
 
 // --- Settings Panel Types ---
 
-export type SettingsTab = 'general' | 'connectors' | 'appearance' | 'notifications' | 'network' | 'shortcuts' | 'rules' | 'about';
+export type SettingsTab = 'general' | 'connectors' | 'appearance' | 'notifications' | 'network' | 'shortcuts' | 'rules' | 'debug' | 'about';
 
 // --- API Types ---
 

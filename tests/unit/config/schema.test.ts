@@ -25,7 +25,7 @@ describe('appConfigSchema', () => {
     expect(result.window.theme).toBe('light');
     expect(result.api.port).toBe(3000);
     // Non-overridden fields keep defaults
-    expect(result.window.size.width).toBe(400);
+    expect(result.window.size.width).toBe(650);
     expect(result.api.bind).toBe('127.0.0.1');
   });
 

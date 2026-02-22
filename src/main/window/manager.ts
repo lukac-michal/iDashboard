@@ -187,18 +187,25 @@ export class WindowManager {
     if (!this.window) return;
     this.stopFlash();
 
+    // Don't hide/minimize if the user is actively using the window
+    if (this.window.isFocused() && (action === 'hide' || action === 'minimize')) {
+      log('Window', `Notification expired but window is focused — lowering instead of ${action}`);
+      this.window.setAlwaysOnTop(this.config.alwaysOnTop.permanent);
+      return;
+    }
+
     switch (action) {
       case 'hide':
         this.window.hide();
         break;
       case 'lower':
-        this.window.setAlwaysOnTop(false);
+        this.window.setAlwaysOnTop(this.config.alwaysOnTop.permanent);
         break;
       case 'minimize':
         this.window.minimize();
         break;
       case 'stay':
-        this.window.setAlwaysOnTop(false);
+        this.window.setAlwaysOnTop(this.config.alwaysOnTop.permanent);
         break;
     }
   }

@@ -4,21 +4,24 @@
 
 import { useState, useEffect } from 'react';
 
+const DEFAULT_BLINK_DURATION_MS = 10_000;
+
 export function useBlinkAnimation(
-  _isAttention: boolean,
+  isAttention: boolean,
   blinkDurationMs?: number,
   startTimestamp?: number,
 ): boolean {
   const [isBlinking, setIsBlinking] = useState(false);
 
   useEffect(() => {
-    if (!blinkDurationMs) {
+    if (!isAttention) {
       setIsBlinking(false);
       return;
     }
 
+    const duration = blinkDurationMs ?? DEFAULT_BLINK_DURATION_MS;
     const start = startTimestamp ?? Date.now();
-    const remaining = blinkDurationMs - (Date.now() - start);
+    const remaining = duration - (Date.now() - start);
 
     if (remaining <= 0) {
       setIsBlinking(false);
@@ -32,7 +35,7 @@ export function useBlinkAnimation(
     }, remaining);
 
     return () => clearTimeout(timer);
-  }, [blinkDurationMs, startTimestamp]);
+  }, [isAttention, blinkDurationMs, startTimestamp]);
 
   return isBlinking;
 }

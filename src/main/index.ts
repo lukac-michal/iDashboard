@@ -30,7 +30,8 @@ import { registerIPCHandlers, pushToRenderer } from './ipc/channels';
 import { createAPIServer, startAPIServer } from './api/server';
 import { IPC } from '@shared/ipc-channels';
 import { meetsMinSeverity } from '@shared/constants';
-import { log, warn, error as logError } from './utils/log';
+import { LogCollector } from './services/log-collector';
+import { log, warn, error as logError, setLogCollector } from './utils/log';
 import type { ConnectorEvent, AppConfig, ConnectorConfig } from '@shared/types';
 
 // Singleton instances
@@ -47,8 +48,14 @@ let rulesEngine: RulesEngine;
 let shortcutService: KeyboardShortcutService;
 let autoUpdater: AutoUpdaterService;
 let configLoader: ConfigLoader;
+let logCollector: LogCollector;
 
 async function bootstrap(): Promise<void> {
+  // --- Log Collector (before anything else so all logs are captured) ---
+  const logsDir = path.join(app.getPath('userData'), 'logs');
+  logCollector = new LogCollector(logsDir);
+  setLogCollector(logCollector);
+
   // --- Configuration ---
   const configDir = path.join(os.homedir(), '.idashboard');
   configLoader = new ConfigLoader(configDir);
@@ -154,6 +161,7 @@ async function bootstrap(): Promise<void> {
     if (meetsMinSeverity(processed.severity, popupMin)) {
       log('Event', `Surfacing window (severity=${processed.severity} >= ${popupMin}): "${processed.title}"`);
       windowManager.surfaceForNotification();
+      pushToRenderer(mainWindow, IPC.APP_NAVIGATE, 'dashboard');
       soundService.play(windowManager.getWindow());
       trayManager.setBadge(eventStore.getActive().filter(e =>
         meetsMinSeverity(e.severity, popupMin),
@@ -235,9 +243,19 @@ async function bootstrap(): Promise<void> {
     soundService,
     exportService,
     rulesEngine,
+    logCollector,
     getConfig: () => config,
     updateConfig: (partial) => {
-      config = { ...config, ...partial } as AppConfig;
+      // Deep-merge one level: spread nested objects instead of replacing them
+      const merged: Record<string, unknown> = { ...config };
+      for (const [key, value] of Object.entries(partial)) {
+        if (value && typeof value === 'object' && !Array.isArray(value) && (config as Record<string, unknown>)[key]) {
+          merged[key] = { ...(config as Record<string, unknown>)[key] as object, ...value };
+        } else {
+          merged[key] = value;
+        }
+      }
+      config = merged as AppConfig;
       if (partial.notifications?.sound) {
         soundService.configure(partial.notifications.sound as AppConfig['notifications']['sound']);
       }
@@ -246,6 +264,11 @@ async function bootstrap(): Promise<void> {
           app.dock?.hide();
         } else {
           app.dock?.show();
+          // Re-apply custom dock icon — macOS resets it after dock.show()
+          if (process.platform === 'darwin') {
+            const iconPath = path.join(__dirname, '../../resources/icon.png');
+            app.dock?.setIcon(iconPath);
+          }
         }
       }
       if (partial.startup?.launchAtLogin !== undefined) {
@@ -353,4 +376,5 @@ app.on('before-quit', async () => {
   autoUpdater?.stop();
   await connectorEngine?.destroy();
   networkService?.stop();
+  logCollector?.destroy();
 });

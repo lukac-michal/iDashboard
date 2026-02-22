@@ -16,7 +16,10 @@ export function useWindowSize() {
     };
 
     window.addEventListener('resize', handleResize);
-    handleResize();
+    // Don't call handleResize() on mount — store is already initialized,
+    // and calling it here would overwrite an intentional setWindowSize
+    // (e.g., from style switch) with stale values before the window
+    // has physically resized.
 
     return () => window.removeEventListener('resize', handleResize);
   }, [setWindowSize]);

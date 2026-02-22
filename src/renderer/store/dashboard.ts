@@ -15,7 +15,7 @@ import type {
   ThemeColors,
 } from '@shared/types';
 
-export type ViewPanel = 'dashboard' | 'history' | 'trends' | 'diagnostics' | 'settings';
+export type ViewPanel = 'dashboard' | 'history' | 'trends' | 'diagnostics' | 'settings' | 'logs';
 
 interface DashboardState {
   // Events
@@ -34,6 +34,7 @@ interface DashboardState {
   connectors: ConnectorStatus[];
 
   // UI
+  uiStyle: 'normal' | 'minimal';
   windowWidth: number;
   windowHeight: number;
   activePanel: ViewPanel;
@@ -73,6 +74,7 @@ interface DashboardState {
   setNetworkState: (state: ReachabilityState) => void;
   setOnlineStatus: (online: boolean, vpn: boolean) => void;
   setConfig: (config: AppConfig) => void;
+  setUiStyle: (style: 'normal' | 'minimal') => void;
   setActivePanel: (panel: ViewPanel) => void;
   setSettingsTab: (tab: SettingsTab) => void;
   setGridLayout: (layout: GridLayoutItem[]) => void;
@@ -90,6 +92,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   historyEvents: [],
   historyFilter: {},
   connectors: [],
+  uiStyle: 'normal',
   windowWidth: window.innerWidth,
   windowHeight: window.innerHeight,
   activePanel: 'dashboard',
@@ -159,7 +162,16 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   setWindowSize: (width, height) => set({ windowWidth: width, windowHeight: height }),
   setNetworkState: (networkState) => set({ networkState }),
   setOnlineStatus: (isOnline, vpnDetected) => set({ isOnline, vpnDetected }),
-  setConfig: (config) => set({ config }),
+  setConfig: (config) => {
+    // Sync uiStyle from config only on initial load (when store has no config yet)
+    const current = get().config;
+    if (!current && config.window?.uiStyle) {
+      set({ config, uiStyle: config.window.uiStyle });
+    } else {
+      set({ config });
+    }
+  },
+  setUiStyle: (uiStyle) => set({ uiStyle }),
   setActivePanel: (activePanel) => set({ activePanel }),
   setSettingsTab: (settingsTab) => set({ settingsTab }),
   setGridLayout: (gridLayout) => set({ gridLayout }),

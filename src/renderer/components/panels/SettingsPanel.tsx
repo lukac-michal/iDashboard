@@ -23,6 +23,7 @@ const TABS: { id: SettingsTab; label: string }[] = [
   { id: 'network', label: 'Network' },
   { id: 'shortcuts', label: 'Shortcuts' },
   { id: 'rules', label: 'Rules' },
+  { id: 'debug', label: 'Debug' },
   { id: 'about', label: 'About' },
 ];
 
@@ -58,6 +59,7 @@ export function SettingsPanel() {
         {settingsTab === 'network' && <NetworkSettings />}
         {settingsTab === 'shortcuts' && <ShortcutsSettings />}
         {settingsTab === 'rules' && <RulesSettings />}
+        {settingsTab === 'debug' && <DebugSettings />}
         {settingsTab === 'about' && <AboutSettings />}
       </div>
     </div>
@@ -727,6 +729,34 @@ function RulesSettings() {
   );
 }
 
+// --- Debug Settings ---
+
+function DebugSettings() {
+  const config = useDashboardStore(s => s.config);
+  if (!config) return <Loading />;
+
+  const update = (partial: Partial<AppConfig>) => {
+    window.iDashboard?.updateConfig(partial);
+  };
+
+  return (
+    <div className="space-y-4">
+      <SectionTitle>Debug Mode</SectionTitle>
+      <SettingRow label="Enable Debug">
+        <ToggleSwitch
+          checked={config.debug?.enabled ?? false}
+          onChange={v => update({ debug: { enabled: v } })}
+        />
+      </SettingRow>
+      <div className="pl-40 -mt-1 mb-1">
+        <span className="text-[10px] text-gray-500">
+          Shows window dimensions in the title bar and exposes a Logs tab in the bottom navigation.
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // --- About ---
 
 function AboutSettings() {
@@ -734,7 +764,7 @@ function AboutSettings() {
     <div className="space-y-4">
       <SectionTitle>iDashboard</SectionTitle>
       <div className="space-y-2 text-xs text-gray-400">
-        <p>Version: 0.1.0</p>
+        <p>Version: {typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0'}</p>
         <p>A lightweight developer dashboard for unified tool monitoring and attention routing.</p>
         <p className="pt-2">Built with Electron, React, Zustand, Fastify, SQLite, and Drizzle ORM.</p>
       </div>

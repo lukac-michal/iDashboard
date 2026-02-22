@@ -7,7 +7,7 @@ import { useDashboardStore } from '@renderer/store/dashboard';
 import type { ConnectorEvent, ConnectorStatus, AppConfig } from '@shared/types';
 
 export function useIPCSync() {
-  const { pushEvent, setEvents, setConnectors, setConfig, setOnlineStatus, setNetworkState } =
+  const { pushEvent, setEvents, setConnectors, setConfig, setOnlineStatus, setNetworkState, setActivePanel } =
     useDashboardStore();
 
   useEffect(() => {
@@ -37,6 +37,10 @@ export function useIPCSync() {
       setNetworkState(s.state as Parameters<typeof setNetworkState>[0]);
     });
 
+    const unsubNavigate = api.onNavigate((panel: unknown) => {
+      setActivePanel(panel as Parameters<typeof setActivePanel>[0]);
+    });
+
     // Poll connectors status periodically
     const statusInterval = setInterval(() => {
       api.getConnectors().then((connectors: ConnectorStatus[]) => setConnectors(connectors));
@@ -46,7 +50,8 @@ export function useIPCSync() {
       unsubEvent();
       unsubConfig();
       unsubNetwork();
+      unsubNavigate();
       clearInterval(statusInterval);
     };
-  }, [pushEvent, setEvents, setConnectors, setConfig, setOnlineStatus, setNetworkState]);
+  }, [pushEvent, setEvents, setConnectors, setConfig, setOnlineStatus, setNetworkState, setActivePanel]);
 }

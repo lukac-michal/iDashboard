@@ -45,7 +45,6 @@ export function EventCard({ event, containerWidth, onDismiss, onAction }: EventC
     <div
       className={`
         relative rounded-lg border overflow-hidden animate-fade-in
-        ${isBlinking ? 'animate-blink' : ''}
         bg-gray-900/80 hover:bg-gray-800/80 transition-colors
         ${hasFocusAction ? 'cursor-pointer' : ''}
       `}
@@ -60,7 +59,7 @@ export function EventCard({ event, containerWidth, onDismiss, onAction }: EventC
       <div className="p-3 flex items-start gap-2">
         {/* Icon / status dot */}
         <div
-          className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 mt-0.5 text-xs"
+          className={`w-6 h-6 rounded flex items-center justify-center flex-shrink-0 mt-0.5 text-xs ${isBlinking ? 'animate-blink' : ''}`}
           style={{ backgroundColor: `${borderColor}20`, color: borderColor }}
         >
           {isAttention ? '⚡' : event.severity === 'error' ? '✕' : '●'}
@@ -75,7 +74,7 @@ export function EventCard({ event, containerWidth, onDismiss, onAction }: EventC
             </div>
 
             {showBody && event.body && (
-              <p className="widget-body text-xs text-gray-400 mt-2 line-clamp-2">{event.body}</p>
+              <p className="widget-body text-xs text-gray-400 mt-1.5 line-clamp-2">{event.body}</p>
             )}
 
             <div className="flex items-center gap-2 mt-2">

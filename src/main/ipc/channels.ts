@@ -14,6 +14,7 @@ import type { ThemeManager } from '@main/services/theme-manager';
 import type { SoundNotificationService } from '@main/services/sound-notification';
 import type { DataExportService } from '@main/services/data-export';
 import type { RulesEngine } from '@main/services/rules-engine';
+import type { LogCollector } from '@main/services/log-collector';
 import type {
   AppConfig,
   ConnectorConfig,
@@ -36,6 +37,7 @@ export interface IPCContext {
   soundService: SoundNotificationService;
   exportService: DataExportService;
   rulesEngine: RulesEngine;
+  logCollector: LogCollector;
   getConfig: () => AppConfig;
   updateConfig: (partial: Partial<AppConfig>) => void;
   addConnector: (config: ConnectorConfig) => Promise<void>;
@@ -72,9 +74,11 @@ export function registerIPCHandlers(ctx: IPCContext): void {
     params?: unknown;
   }) => {
     await ctx.engine.executeAction(connectorId, actionId, params);
-    // When user clicks Focus Terminal, lower the dashboard so it's not blocking
+    // When user clicks Focus Terminal, get the dashboard out of the way
     if (actionId === 'focus') {
       ctx.windowManager.cancelTemporaryAlwaysOnTop();
+      // Lower the window so the activated app is visible immediately
+      ctx.windowManager.getWindow()?.blur();
     }
   });
 
@@ -86,6 +90,11 @@ export function registerIPCHandlers(ctx: IPCContext): void {
 
   ipcMain.handle(IPC.WINDOW_DOCK, (_event, position: DockPosition) => {
     ctx.windowManager.applyDockPosition(position);
+  });
+
+  ipcMain.handle(IPC.WINDOW_RESIZE, (_event, { width, height }: { width: number; height: number }) => {
+    const win = ctx.windowManager.getWindow();
+    if (win) win.setSize(width, height, true);
   });
 
   ipcMain.handle(IPC.WINDOW_MINIMIZE, () => {
@@ -216,6 +225,12 @@ export function registerIPCHandlers(ctx: IPCContext): void {
   ipcMain.handle(IPC.RULES_SAVE, (_event, rules: CrossConnectorRule[]) => {
     ctx.rulesEngine.setRules(rules);
     return { ok: true };
+  });
+
+  // --- Logs ---
+
+  ipcMain.handle(IPC.LOGS_GET, (_event, { search }: { search?: string } = {}) => {
+    return ctx.logCollector.getLines(search);
   });
 }
 

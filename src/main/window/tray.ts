@@ -3,6 +3,7 @@
 // ============================================================
 
 import { Tray, Menu, nativeImage } from 'electron';
+import * as path from 'node:path';
 import type { WindowManager } from './manager';
 
 export class TrayManager {
@@ -15,8 +16,14 @@ export class TrayManager {
   }
 
   create(): void {
-    // Create a simple 16x16 tray icon
-    const icon = nativeImage.createEmpty();
+    // Load tray icon from resources
+    const iconPath = path.join(__dirname, '../../resources/tray-icon.png');
+    let icon = nativeImage.createFromPath(iconPath);
+    if (icon.isEmpty()) {
+      icon = nativeImage.createEmpty();
+    } else if (process.platform === 'darwin') {
+      icon.setTemplateImage(true);
+    }
     this.tray = new Tray(icon);
     this.tray.setToolTip('iDashboard');
     this.updateContextMenu();

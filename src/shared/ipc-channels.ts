@@ -72,7 +72,11 @@ export const IPC = {
   // Connector health details
   CONNECTOR_HEALTH_ALL: 'connector:health-all',
 
+  // Logs
+  LOGS_GET: 'logs:get',
+
   // App lifecycle
   APP_READY: 'app:ready',
   APP_FOCUS_TERMINAL: 'app:focus-terminal',
+  APP_NAVIGATE: 'app:navigate', // main → renderer: switch active panel
 } as const;

@@ -2,13 +2,14 @@
 // AdaptiveGrid - Fluid layout based on window dimensions
 // ============================================================
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useDashboardStore } from '@renderer/store/dashboard';
 import { useWindowSize } from '@renderer/hooks/useWindowSize';
 import { ConnectorWidget } from '@renderer/components/widgets/ConnectorWidget';
 import { COLUMN_WIDTH_UNIT } from '@shared/constants';
 
 const SEVERITIES = ['info', 'warning', 'error', 'critical', 'attention'] as const;
+const PAGE_SIZE = 8;
 
 export function AdaptiveGrid() {
   const { width } = useWindowSize();
@@ -19,6 +20,7 @@ export function AdaptiveGrid() {
   // Sets for multiselect — empty set means "all selected"
   const [selectedConnectors, setSelectedConnectors] = useState<Set<string>>(new Set());
   const [selectedSeverities, setSelectedSeverities] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(1);
 
   const columns = Math.max(1, Math.floor(width / COLUMN_WIDTH_UNIT));
 
@@ -76,16 +78,30 @@ export function AdaptiveGrid() {
     });
   }, [activeEvents, selectedConnectors, selectedSeverities, allConnectorsSelected, allSeveritiesSelected]);
 
-  // Group events by connector
+  // Global pagination
+  const totalPages = Math.max(1, Math.ceil(filteredEvents.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+
+  // Reset to page 1 when filters or event count change
+  useEffect(() => {
+    setPage(1);
+  }, [filteredEvents.length, hasFilters]);
+
+  const pagedEvents = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE;
+    return filteredEvents.slice(start, start + PAGE_SIZE);
+  }, [filteredEvents, safePage]);
+
+  // Group paged events by connector
   const eventsByConnector = useMemo(() => {
-    const map = new Map<string, typeof filteredEvents>();
-    for (const event of filteredEvents) {
+    const map = new Map<string, typeof pagedEvents>();
+    for (const event of pagedEvents) {
       const existing = map.get(event.connectorId) ?? [];
       existing.push(event);
       map.set(event.connectorId, existing);
     }
     return map;
-  }, [filteredEvents]);
+  }, [pagedEvents]);
 
   // Sort connectors: those with events first, then by priority
   const sortedConnectors = useMemo(() => {
@@ -122,10 +138,9 @@ export function AdaptiveGrid() {
   const chipOff = 'bg-transparent text-gray-500 hover:text-gray-400';
 
   return (
-    <div className="p-6 h-full flex flex-col gap-3 overflow-hidden">
+    <div className="h-full flex flex-col overflow-hidden">
       {/* Filter bar */}
-      <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-        {/* Connector filter */}
+      <div className="flex items-center gap-2 px-6 py-2.5 flex-shrink-0 flex-wrap">
         <span className="text-[10px] text-gray-600 mr-0.5">Source:</span>
         <button
           className={`${chipBase} ${allConnectorsSelected ? chipOn : chipOff}`}
@@ -141,7 +156,6 @@ export function AdaptiveGrid() {
 
         <span className="text-gray-800 mx-1">|</span>
 
-        {/* Severity filter */}
         <span className="text-[10px] text-gray-600 mr-0.5">Severity:</span>
         <button
           className={`${chipBase} ${allSeveritiesSelected ? chipOn : chipOff}`}
@@ -154,10 +168,6 @@ export function AdaptiveGrid() {
             onClick={() => toggleSeverity(sev)}
           >{sev.charAt(0).toUpperCase() + sev.slice(1)}</button>
         ))}
-
-        <span className="text-[10px] text-gray-600 ml-auto">
-          {filteredEvents.length}{hasFilters ? ` / ${activeEvents.length}` : ''} event{filteredEvents.length !== 1 ? 's' : ''}
-        </span>
       </div>
 
       {/* Empty state */}
@@ -179,7 +189,7 @@ export function AdaptiveGrid() {
 
       /* Event grid */
       <div
-        className="flex-1 min-h-0 overflow-y-auto"
+        className="flex-1 min-h-0 overflow-y-auto p-6"
         style={{
           display: 'grid',
           gridTemplateColumns: `repeat(${effectiveColumns}, 1fr)`,
@@ -222,6 +232,84 @@ export function AdaptiveGrid() {
       ))}
       </div>
       )}
+
+      {/* Status bar */}
+      <div className="flex items-center px-6 py-2.5 border-t border-gray-800/50 flex-shrink-0">
+        <span className="text-[10px] text-gray-500">
+          {filteredEvents.length}{hasFilters ? ` / ${activeEvents.length}` : ''} event{filteredEvents.length !== 1 ? 's' : ''}
+        </span>
+
+        {totalPages > 1 && (
+          <Pagination page={safePage} totalPages={totalPages} onPageChange={setPage} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// --- Pagination Bar ---
+
+function Pagination({ page, totalPages, onPageChange }: {
+  page: number;
+  totalPages: number;
+  onPageChange: (p: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [inputVal, setInputVal] = useState(String(page));
+
+  const btnClass = (enabled: boolean) =>
+    `w-6 h-6 flex items-center justify-center rounded text-[11px] ${
+      enabled
+        ? 'text-gray-400 hover:bg-gray-700 hover:text-gray-200 cursor-pointer'
+        : 'text-gray-700 cursor-default'
+    }`;
+
+  return (
+    <div className="flex items-center gap-2 ml-auto select-none">
+      <button className={btnClass(page > 1)} onClick={() => page > 1 && onPageChange(1)} title="First page">
+        ⟪
+      </button>
+      <button className={btnClass(page > 1)} onClick={() => page > 1 && onPageChange(page - 1)} title="Previous page">
+        ‹
+      </button>
+
+      {editing ? (
+        <input
+          className="w-8 h-6 text-center text-[11px] bg-gray-800 border border-gray-600 rounded text-gray-200 outline-none"
+          value={inputVal}
+          autoFocus
+          onChange={(e) => setInputVal(e.target.value)}
+          onBlur={() => {
+            const n = parseInt(inputVal, 10);
+            if (n >= 1 && n <= totalPages) onPageChange(n);
+            setEditing(false);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              const n = parseInt(inputVal, 10);
+              if (n >= 1 && n <= totalPages) onPageChange(n);
+              setEditing(false);
+            } else if (e.key === 'Escape') {
+              setEditing(false);
+            }
+          }}
+        />
+      ) : (
+        <button
+          className="h-6 px-1.5 text-[11px] text-gray-300 hover:bg-gray-700 rounded cursor-pointer"
+          onClick={() => { setInputVal(String(page)); setEditing(true); }}
+          title="Click to jump to page"
+        >
+          {page} / {totalPages}
+        </button>
+      )}
+
+      <button className={btnClass(page < totalPages)} onClick={() => page < totalPages && onPageChange(page + 1)} title="Next page">
+        ›
+      </button>
+      <button className={btnClass(page < totalPages)} onClick={() => page < totalPages && onPageChange(totalPages)} title="Last page">
+        ⟫
+      </button>
     </div>
   );
 }

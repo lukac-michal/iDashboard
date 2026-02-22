@@ -7,12 +7,13 @@ import type { AppConfig } from '@shared/types';
 
 export const DEFAULT_CONFIG: AppConfig = {
   window: {
+    uiStyle: 'normal',
     defaultMode: 'floating',
     size: {
-      width: 400,
-      height: 300,
-      minWidth: 80,
-      minHeight: 60,
+      width: 650,
+      height: 480,
+      minWidth: 200,
+      minHeight: 150,
       rememberLastSize: true,
     },
     position: {
@@ -95,5 +96,8 @@ export const DEFAULT_CONFIG: AppConfig = {
     launchAtLogin: false,
     startMinimized: true,
     checkForUpdates: true,
+  },
+  debug: {
+    enabled: false,
   },
 };

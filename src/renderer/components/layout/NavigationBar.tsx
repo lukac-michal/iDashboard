@@ -2,9 +2,10 @@
 // NavigationBar - Bottom tab bar for switching between panels
 // ============================================================
 
+import { useMemo } from 'react';
 import { useDashboardStore, type ViewPanel } from '@renderer/store/dashboard';
 
-const tabs: { id: ViewPanel; label: string; icon: string }[] = [
+const baseTabs: { id: ViewPanel; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: '◈' },
   { id: 'history', label: 'History', icon: '☰' },
   { id: 'trends', label: 'Trends', icon: '◲' },
@@ -12,15 +13,20 @@ const tabs: { id: ViewPanel; label: string; icon: string }[] = [
   { id: 'settings', label: 'Settings', icon: '⚙' },
 ];
 
+const logsTab: { id: ViewPanel; label: string; icon: string } = {
+  id: 'logs', label: 'Logs', icon: '▤',
+};
+
 export function NavigationBar() {
   const activePanel = useDashboardStore(s => s.activePanel);
   const setActivePanel = useDashboardStore(s => s.setActivePanel);
   const windowWidth = useDashboardStore(s => s.windowWidth);
+  const debugEnabled = useDashboardStore(s => s.config?.debug?.enabled ?? false);
 
-  // Only show full nav in fullscreen/expanded modes
-  if (windowWidth < 400) {
-    return null;
-  }
+  const tabs = useMemo(
+    () => debugEnabled ? [...baseTabs, logsTab] : baseTabs,
+    [debugEnabled],
+  );
 
   return (
     <nav className="flex items-center border-t border-gray-800/50 bg-gray-900/60">

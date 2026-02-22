@@ -5,24 +5,29 @@
 import { useEffect } from 'react';
 import { useIPCSync } from '@renderer/hooks/useIPCSync';
 import { useKeyboardShortcuts } from '@renderer/hooks/useKeyboardShortcuts';
+import { useWindowSize } from '@renderer/hooks/useWindowSize';
 import { TitleBar } from '@renderer/components/layout/TitleBar';
 import { NavigationBar } from '@renderer/components/layout/NavigationBar';
 import { NetworkStatusBar } from '@renderer/components/common/NetworkStatusBar';
 import { AdaptiveGrid } from '@renderer/components/layout/AdaptiveGrid';
 import { DashboardGrid } from '@renderer/components/layout/DashboardGrid';
+import { MinimalDashboard } from '@renderer/components/layout/MinimalDashboard';
 import { EventHistoryPanel } from '@renderer/components/panels/EventHistoryPanel';
 import { TrendChartsPanel } from '@renderer/components/panels/TrendChartsPanel';
 import { NetworkDiagnosticsPanel } from '@renderer/components/panels/NetworkDiagnosticsPanel';
 import { SettingsPanel } from '@renderer/components/panels/SettingsPanel';
+import { LogsPanel } from '@renderer/components/panels/LogsPanel';
 import { useDashboardStore } from '@renderer/store/dashboard';
 
 export default function App() {
   useIPCSync();
   useKeyboardShortcuts();
+  useWindowSize();
 
   const activePanel = useDashboardStore(s => s.activePanel);
   const windowWidth = useDashboardStore(s => s.windowWidth);
   const gridEditMode = useDashboardStore(s => s.gridEditMode);
+  const isMinimal = useDashboardStore(s => s.uiStyle === 'minimal');
 
   // Use grid layout in fullscreen/expanded modes when edit mode is on
   const useGridLayout = gridEditMode && windowWidth >= 600;
@@ -48,15 +53,22 @@ export default function App() {
       <TitleBar />
       <NetworkStatusBar />
       <main className="flex-1 min-h-0">
-        {activePanel === 'dashboard' && (
-          useGridLayout ? <DashboardGrid /> : <AdaptiveGrid />
+        {isMinimal ? (
+          activePanel === 'settings' ? <SettingsPanel /> : <MinimalDashboard />
+        ) : (
+          <>
+            {activePanel === 'dashboard' && (
+              useGridLayout ? <DashboardGrid /> : <AdaptiveGrid />
+            )}
+            {activePanel === 'history' && <EventHistoryPanel />}
+            {activePanel === 'trends' && <TrendChartsPanel />}
+            {activePanel === 'diagnostics' && <NetworkDiagnosticsPanel />}
+            {activePanel === 'settings' && <SettingsPanel />}
+            {activePanel === 'logs' && <LogsPanel />}
+          </>
         )}
-        {activePanel === 'history' && <EventHistoryPanel />}
-        {activePanel === 'trends' && <TrendChartsPanel />}
-        {activePanel === 'diagnostics' && <NetworkDiagnosticsPanel />}
-        {activePanel === 'settings' && <SettingsPanel />}
       </main>
-      <NavigationBar />
+      {!isMinimal && <NavigationBar />}
     </div>
   );
 }

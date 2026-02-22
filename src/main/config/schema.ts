@@ -65,12 +65,13 @@ export const connectorConfigSchema = z.object({
 
 export const appConfigSchema = z.object({
   window: z.object({
+    uiStyle: z.enum(['normal', 'minimal']).default('normal'),
     defaultMode: z.enum(['floating', 'docked', 'tray', 'fullscreen']).default('floating'),
     size: z.object({
-      width: z.number().int().positive().default(400),
-      height: z.number().int().positive().default(300),
-      minWidth: z.number().int().positive().default(80),
-      minHeight: z.number().int().positive().default(60),
+      width: z.number().int().positive().default(650),
+      height: z.number().int().positive().default(480),
+      minWidth: z.number().int().positive().default(200),
+      minHeight: z.number().int().positive().default(150),
       rememberLastSize: z.boolean().default(true),
     }).default({}),
     position: z.object({
@@ -157,6 +158,9 @@ export const appConfigSchema = z.object({
     launchAtLogin: z.boolean().default(false),
     startMinimized: z.boolean().default(true),
     checkForUpdates: z.boolean().default(true),
+  }).default({}),
+  debug: z.object({
+    enabled: z.boolean().default(false),
   }).default({}),
 });
 

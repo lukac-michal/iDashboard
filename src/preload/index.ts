@@ -23,6 +23,7 @@ const api = {
   // Window
   setWindowMode: (mode: string) => ipcRenderer.invoke(IPC.WINDOW_MODE, mode),
   dockWindow: (position: string) => ipcRenderer.invoke(IPC.WINDOW_DOCK, position),
+  resizeWindow: (width: number, height: number) => ipcRenderer.invoke(IPC.WINDOW_RESIZE, { width, height }),
   minimizeWindow: () => ipcRenderer.invoke(IPC.WINDOW_MINIMIZE),
   closeWindow: () => ipcRenderer.invoke(IPC.WINDOW_CLOSE),
 
@@ -62,6 +63,9 @@ const api = {
   getRules: () => ipcRenderer.invoke(IPC.RULES_LIST),
   saveRules: (rules: unknown) => ipcRenderer.invoke(IPC.RULES_SAVE, rules),
 
+  // Logs
+  getLogs: (search?: string) => ipcRenderer.invoke(IPC.LOGS_GET, { search }),
+
   // Auth
   startAuth: (connectorId: string) => ipcRenderer.invoke(IPC.AUTH_START, connectorId),
   getAuthStatus: (connectorId: string) => ipcRenderer.invoke(IPC.AUTH_STATUS, connectorId),
@@ -84,6 +88,12 @@ const api = {
     const handler = (_: unknown, data: unknown) => callback(data);
     ipcRenderer.on(IPC.NETWORK_CHANGED, handler);
     return () => ipcRenderer.removeListener(IPC.NETWORK_CHANGED, handler);
+  },
+
+  onNavigate: (callback: (panel: unknown) => void) => {
+    const handler = (_: unknown, data: unknown) => callback(data);
+    ipcRenderer.on(IPC.APP_NAVIGATE, handler);
+    return () => ipcRenderer.removeListener(IPC.APP_NAVIGATE, handler);
   },
 };
 
