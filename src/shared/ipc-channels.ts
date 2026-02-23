@@ -76,6 +76,29 @@ export const IPC = {
   // Logs
   LOGS_GET: 'logs:get',
 
+  // Agent orchestration
+  AGENTS_LIST: 'agents:list',
+  AGENTS_REGISTER: 'agents:register',
+  AGENTS_UNREGISTER: 'agents:unregister',
+  AGENTS_UPDATE_STATUS: 'agents:update-status',
+  AGENTS_STREAM: 'agents:stream',               // main → renderer push
+  AGENT_MESSAGES_LIST: 'agent-messages:list',
+  AGENT_MESSAGES_STREAM: 'agent-messages:stream', // main → renderer push
+  AGENT_SPAWN: 'agent:spawn',
+  AGENT_SEND_TEXT: 'agent:send-text',
+  AGENT_FOCUS: 'agent:focus',
+
+  // Master agent
+  MASTER_ROUTE_TASK: 'master:route-task',
+  MASTER_MESSAGES: 'master:messages',
+
+  // Connector force poll
+  CONNECTORS_FORCE_POLL: 'connectors:force-poll',
+
+  // Slack bidirectional
+  SLACK_SEND: 'slack:send',
+  SLACK_CHANNELS: 'slack:channels',
+
   // App lifecycle
   APP_READY: 'app:ready',
   APP_FOCUS_TERMINAL: 'app:focus-terminal',

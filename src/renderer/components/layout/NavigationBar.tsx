@@ -5,13 +5,25 @@
 import { useMemo } from 'react';
 import { useDashboardStore, type ViewPanel } from '@renderer/store/dashboard';
 
-const baseTabs: { id: ViewPanel; label: string; icon: string }[] = [
+const historyTab: { id: ViewPanel; label: string; icon: string } = {
+  id: 'history', label: 'History', icon: '☰',
+};
+
+const orchestratorTab: { id: ViewPanel; label: string; icon: string } = {
+  id: 'orchestrator', label: 'Orchestrator', icon: '⚡',
+};
+
+const coreTabs: { id: ViewPanel; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: '◈' },
-  { id: 'history', label: 'History', icon: '☰' },
+  // history or orchestrator inserted dynamically
   { id: 'trends', label: 'Trends', icon: '◲' },
   { id: 'diagnostics', label: 'Health', icon: '♡' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
 ];
+
+const slackTab: { id: ViewPanel; label: string; icon: string } = {
+  id: 'slack', label: 'Slack', icon: '💬',
+};
 
 const logsTab: { id: ViewPanel; label: string; icon: string } = {
   id: 'logs', label: 'Logs', icon: '▤',
@@ -22,11 +34,19 @@ export function NavigationBar() {
   const setActivePanel = useDashboardStore(s => s.setActivePanel);
   const windowWidth = useDashboardStore(s => s.windowWidth);
   const debugEnabled = useDashboardStore(s => s.config?.debug?.enabled ?? false);
+  const experimentalEnabled = useDashboardStore(s => s.config?.experimental?.enabled ?? false);
+  const connectors = useDashboardStore(s => s.connectors);
+  const hasSlack = connectors.some(c => c.type === 'slack');
 
-  const tabs = useMemo(
-    () => debugEnabled ? [...baseTabs, logsTab] : baseTabs,
-    [debugEnabled],
-  );
+  const tabs = useMemo(() => {
+    const secondTab = experimentalEnabled ? orchestratorTab : historyTab;
+    const base = [coreTabs[0], secondTab, ...coreTabs.slice(1)];
+    // Insert Slack tab before Settings (last item in base)
+    const withSlack = hasSlack
+      ? [...base.slice(0, -1), slackTab, base[base.length - 1]]
+      : base;
+    return debugEnabled ? [...withSlack, logsTab] : withSlack;
+  }, [debugEnabled, experimentalEnabled, hasSlack]);
 
   return (
     <nav className="flex items-center border-t border-gray-800/50 bg-gray-900/60">

@@ -162,6 +162,14 @@ export const appConfigSchema = z.object({
   debug: z.object({
     enabled: z.boolean().default(false),
   }).default({}),
+  experimental: z.object({
+    enabled: z.boolean().default(false),
+    prompt: z.string().default(''),
+    pmProfile: z.string().default(''),
+    repoPath: z.string().default(''),
+    agentProfilesDir: z.string().default(''),
+    healthCheckIntervalMs: z.number().int().min(1000).default(10000),
+  }).default({}),
 });
 
 export type ValidatedAppConfig = z.infer<typeof appConfigSchema>;

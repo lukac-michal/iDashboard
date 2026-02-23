@@ -13,9 +13,12 @@ import type {
   AggregateResult,
   CrossConnectorRule,
   ThemeColors,
+  AgentInfo,
+  AgentMessage,
+  SlackChatMessage,
 } from '@shared/types';
 
-export type ViewPanel = 'dashboard' | 'history' | 'trends' | 'diagnostics' | 'settings' | 'logs';
+export type ViewPanel = 'dashboard' | 'history' | 'orchestrator' | 'trends' | 'diagnostics' | 'settings' | 'logs' | 'slack';
 
 interface DashboardState {
   // Events
@@ -62,6 +65,18 @@ interface DashboardState {
   // Rules
   rules: CrossConnectorRule[];
 
+  // Agent orchestration
+  agents: AgentInfo[];
+  agentMessages: AgentMessage[];
+  modalMessage: AgentMessage | null;
+
+  // Slack channels
+  slackChannels: string[];
+
+  // Slack conversation
+  slackMessages: SlackChatMessage[];
+  selectedSlackChannel: string | null;
+
   // Acknowledged events (user clicked / interacted — stops blinking)
   acknowledgedEvents: Set<string>;
 
@@ -88,6 +103,13 @@ interface DashboardState {
   setThemeColors: (colors: ThemeColors | null, name: string) => void;
   setAggregates: (aggregates: AggregateResult[]) => void;
   setRules: (rules: CrossConnectorRule[]) => void;
+  setAgents: (agents: AgentInfo[]) => void;
+  addAgentMessage: (message: AgentMessage) => void;
+  setModalMessage: (message: AgentMessage | null) => void;
+  setSlackChannels: (channels: string[]) => void;
+  addSlackMessage: (message: SlackChatMessage) => void;
+  updateSlackMessage: (id: string, update: Partial<SlackChatMessage>) => void;
+  setSelectedSlackChannel: (channel: string | null) => void;
 }
 
 export const useDashboardStore = create<DashboardState>((set, get) => ({
@@ -111,6 +133,12 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   currentThemeName: 'dark',
   aggregates: [],
   rules: [],
+  agents: [],
+  agentMessages: [],
+  modalMessage: null,
+  slackChannels: [],
+  slackMessages: [],
+  selectedSlackChannel: null,
   acknowledgedEvents: new Set(),
   eventCounter: 0,
 
@@ -194,4 +222,21 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   setThemeColors: (themeColors, currentThemeName) => set({ themeColors, currentThemeName }),
   setAggregates: (aggregates) => set({ aggregates }),
   setRules: (rules) => set({ rules }),
+  setAgents: (agents) => set({ agents }),
+  addAgentMessage: (message) => set((state) => ({
+    agentMessages: [...state.agentMessages.slice(-999), message],
+  })),
+  setModalMessage: (modalMessage) => set({ modalMessage }),
+  setSlackChannels: (slackChannels) => set({ slackChannels }),
+  addSlackMessage: (message) => set((state) => {
+    if (state.slackMessages.some(m => m.id === message.id)) return state;
+    const next = [...state.slackMessages, message];
+    return { slackMessages: next.length > 500 ? next.slice(-500) : next };
+  }),
+  updateSlackMessage: (id, update) => set((state) => ({
+    slackMessages: state.slackMessages.map(m =>
+      m.id === id ? { ...m, ...update } : m
+    ),
+  })),
+  setSelectedSlackChannel: (selectedSlackChannel) => set({ selectedSlackChannel }),
 }));

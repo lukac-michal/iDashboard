@@ -81,6 +81,28 @@ export class ClaudeCodeConnector extends BaseConnector {
           },
         });
 
+      case 'agent-message': {
+        const from = (req.metadata?.from as string) ?? 'unknown';
+        const to = (req.metadata?.to as string) ?? 'unknown';
+        return this.createEvent({
+          severity: 'info',
+          title: `${from} → ${to}`,
+          body: message,
+          category: 'agent-message',
+          eventType: 'agent-message',
+          metadata: { sessionId, eventType, from, to },
+          uiHints: {
+            icon: 'message-square',
+            color: '#a855f7',
+            blinkDurationMs: blinkDuration,
+            actionButtons: [
+              { id: 'view-message', label: 'View Full Message', icon: 'eye', variant: 'default' as const },
+              { id: 'focus', label: 'Focus Agent', icon: 'external-link', variant: 'primary' as const },
+            ],
+          },
+        });
+      }
+
       default: {
         const severity = req.severity ?? 'info';
         return this.createEvent({
@@ -174,22 +196,47 @@ export class ClaudeCodeConnector extends BaseConnector {
       log('ClaudeCode', `iTerm2 tab search: looking for "${sessionName}"`);
 
       const escapedName = sessionName.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+      // Search by session name first, then fall back to matching the working
+      // directory path.  This handles renamed tabs — the hook sends
+      // $(basename $PWD) which will still appear inside the session's path.
       const scriptContent = `
 tell application "iTerm2"
   set targetName to "${escapedName}"
   set foundIt to false
+  -- Pass 1: match session name (fastest, covers default titles)
   repeat with w in windows
     repeat with t in tabs of w
       repeat with s in sessions of t
-        set sName to name of s
-        if foundIt is false and sName contains targetName then
-          select t
-          tell w to select
-          set foundIt to true
+        if foundIt is false then
+          set sName to name of s
+          if sName contains targetName then
+            select t
+            tell w to select
+            set foundIt to true
+          end if
         end if
       end repeat
     end repeat
   end repeat
+  -- Pass 2: match working-directory path (covers renamed tabs)
+  if foundIt is false then
+    repeat with w in windows
+      repeat with t in tabs of w
+        repeat with s in sessions of t
+          if foundIt is false then
+            try
+              set sPath to path of s
+              if sPath contains targetName then
+                select t
+                tell w to select
+                set foundIt to true
+              end if
+            end try
+          end if
+        end repeat
+      end repeat
+    end repeat
+  end if
   if foundIt then
     activate
     return "found"

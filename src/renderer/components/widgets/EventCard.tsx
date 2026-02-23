@@ -34,19 +34,32 @@ export function EventCard({ event, containerWidth, isLatest, onDismiss, onAction
   const sessionName = (rawSessionId && rawSessionId !== 'unknown' ? rawSessionId : null)
     ?? event.body?.match(/Session:\s*(.+)/)?.[1];
 
+  const isSlackEvent = event.eventType === 'message-received'
+    || event.eventType === 'mention-received'
+    || event.eventType === 'dm-received';
+
+  const setActivePanel = useDashboardStore(s => s.setActivePanel);
+  const setSelectedSlackChannel = useDashboardStore(s => s.setSelectedSlackChannel);
+
   const handleCardClick = () => {
     acknowledgeEvent(event.id);
-    if (hasFocusAction) {
+    if (isSlackEvent) {
+      const channel = (event.metadata as Record<string, string>)?.channel;
+      if (channel) setSelectedSlackChannel(channel.replace(/^#/, ''));
+      setActivePanel('slack');
+    } else if (hasFocusAction) {
       onAction(event.connectorId, 'focus', { sessionName });
     }
   };
+
+  const isClickable = hasFocusAction || isSlackEvent;
 
   return (
     <div
       className={`
         relative rounded-lg border overflow-hidden animate-fade-in
         bg-gray-900/80 hover:bg-gray-800/80 transition-colors
-        ${hasFocusAction ? 'cursor-pointer' : ''}
+        ${isClickable ? 'cursor-pointer' : ''}
       `}
       style={{ borderColor: `${borderColor}40`, borderLeftColor: borderColor, borderLeftWidth: 3 }}
       onClick={handleCardClick}

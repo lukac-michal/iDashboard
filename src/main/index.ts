@@ -31,6 +31,10 @@ import { createAPIServer, startAPIServer } from './api/server';
 import { IPC } from '@shared/ipc-channels';
 import { meetsMinSeverity } from '@shared/constants';
 import { LogCollector } from './services/log-collector';
+import { AgentRegistry } from './services/agent-registry';
+import { ITerm2Adapter } from './services/iterm2-adapter';
+import { AgentLifecycleService } from './services/agent-lifecycle';
+import { MasterAgentService } from './services/master-agent';
 import { log, warn, error as logError, setLogCollector } from './utils/log';
 import type { ConnectorEvent, AppConfig, ConnectorConfig } from '@shared/types';
 
@@ -49,6 +53,9 @@ let shortcutService: KeyboardShortcutService;
 let autoUpdater: AutoUpdaterService;
 let configLoader: ConfigLoader;
 let logCollector: LogCollector;
+let agentRegistry: AgentRegistry | undefined;
+let agentLifecycle: AgentLifecycleService | undefined;
+let masterAgent: MasterAgentService | undefined;
 
 async function bootstrap(): Promise<void> {
   // --- Log Collector (before anything else so all logs are captured) ---
@@ -156,6 +163,17 @@ async function bootstrap(): Promise<void> {
       warn('Event', 'Window not available, cannot push to renderer');
     }
 
+    // Bridge Slack events into master agent message feed
+    if (masterAgent && processed.connectorId) {
+      const connStatus = connectorEngine.getStatuses().find(s => s.id === processed.connectorId);
+      if (connStatus?.type === 'slack') {
+        masterAgent.recordInboundMessage(
+          `slack:${(processed.metadata?.channel as string) ?? 'unknown'}`,
+          processed.body ?? processed.title,
+        );
+      }
+    }
+
     // Surface window + play sound based on configured severity thresholds
     const popupMin = config.notifications.popupMinSeverity ?? 'attention';
     if (meetsMinSeverity(processed.severity, popupMin)) {
@@ -231,6 +249,37 @@ async function bootstrap(): Promise<void> {
     log('Main', 'Display configuration changed');
   });
 
+  // --- Experimental Mode: Agent Orchestration ---
+  if (config.experimental?.enabled) {
+    log('Main', 'Experimental mode enabled — initializing agent orchestration');
+    agentRegistry = new AgentRegistry(config.experimental.healthCheckIntervalMs * 3);
+    const iterm2Adapter = new ITerm2Adapter();
+    agentLifecycle = new AgentLifecycleService(
+      agentRegistry,
+      iterm2Adapter,
+      config.experimental.repoPath || process.cwd(),
+    );
+    masterAgent = new MasterAgentService(agentLifecycle, agentRegistry, connectorEngine);
+
+    // Push agent updates to renderer
+    agentRegistry.on('agent:registered', () => {
+      pushToRenderer(mainWindow, IPC.AGENTS_STREAM, agentRegistry!.getAll());
+    });
+    agentRegistry.on('agent:updated', () => {
+      pushToRenderer(mainWindow, IPC.AGENTS_STREAM, agentRegistry!.getAll());
+    });
+    agentRegistry.on('agent:unregistered', () => {
+      pushToRenderer(mainWindow, IPC.AGENTS_STREAM, agentRegistry!.getAll());
+    });
+
+    // Push master agent messages to renderer
+    masterAgent.on('message', (msg) => {
+      pushToRenderer(mainWindow, IPC.AGENT_MESSAGES_STREAM, msg);
+    });
+
+    agentLifecycle.startHealthMonitoring(config.experimental.healthCheckIntervalMs);
+  }
+
   // --- IPC ---
   registerIPCHandlers({
     engine: connectorEngine,
@@ -244,6 +293,9 @@ async function bootstrap(): Promise<void> {
     exportService,
     rulesEngine,
     logCollector,
+    agentRegistry,
+    agentLifecycle,
+    masterAgent,
     getConfig: () => config,
     updateConfig: (partial) => {
       // Deep-merge one level: spread nested objects instead of replacing them
@@ -371,6 +423,7 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', async () => {
+  agentLifecycle?.destroy();
   shortcutService?.destroy();
   tokenRefreshService?.stop();
   autoUpdater?.stop();

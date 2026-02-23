@@ -17,6 +17,8 @@ import { TrendChartsPanel } from '@renderer/components/panels/TrendChartsPanel';
 import { NetworkDiagnosticsPanel } from '@renderer/components/panels/NetworkDiagnosticsPanel';
 import { SettingsPanel } from '@renderer/components/panels/SettingsPanel';
 import { LogsPanel } from '@renderer/components/panels/LogsPanel';
+import { OrchestratorPanel } from '@renderer/components/panels/OrchestratorPanel';
+import { SlackPanel } from '@renderer/components/panels/SlackPanel';
 import { useDashboardStore } from '@renderer/store/dashboard';
 
 export default function App() {
@@ -61,8 +63,10 @@ export default function App() {
               useGridLayout ? <DashboardGrid /> : <AdaptiveGrid />
             )}
             {activePanel === 'history' && <EventHistoryPanel />}
+            {activePanel === 'orchestrator' && <OrchestratorPanel />}
             {activePanel === 'trends' && <TrendChartsPanel />}
             {activePanel === 'diagnostics' && <NetworkDiagnosticsPanel />}
+            {activePanel === 'slack' && <SlackPanel />}
             {activePanel === 'settings' && <SettingsPanel />}
             {activePanel === 'logs' && <LogsPanel />}
           </>

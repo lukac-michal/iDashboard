@@ -15,6 +15,10 @@ import type { SoundNotificationService } from '@main/services/sound-notification
 import type { DataExportService } from '@main/services/data-export';
 import type { RulesEngine } from '@main/services/rules-engine';
 import type { LogCollector } from '@main/services/log-collector';
+import type { AgentRegistry } from '@main/services/agent-registry';
+import type { AgentLifecycleService } from '@main/services/agent-lifecycle';
+import type { MasterAgentService } from '@main/services/master-agent';
+import { SlackConnector } from '@main/connectors/slack';
 import type {
   AppConfig,
   ConnectorConfig,
@@ -24,6 +28,8 @@ import type {
   ExportOptions,
   GridLayoutItem,
   CrossConnectorRule,
+  AgentInfo,
+  AgentStatus,
 } from '@shared/types';
 
 export interface IPCContext {
@@ -43,6 +49,9 @@ export interface IPCContext {
   addConnector: (config: ConnectorConfig) => Promise<void>;
   updateConnector: (config: ConnectorConfig) => Promise<void>;
   removeConnector: (id: string) => Promise<void>;
+  agentRegistry?: AgentRegistry;
+  agentLifecycle?: AgentLifecycleService;
+  masterAgent?: MasterAgentService;
 }
 
 export function registerIPCHandlers(ctx: IPCContext): void {
@@ -237,6 +246,114 @@ export function registerIPCHandlers(ctx: IPCContext): void {
   ipcMain.handle(IPC.LOGS_GET, (_event, { search }: { search?: string } = {}) => {
     return ctx.logCollector.getLines(search);
   });
+
+  // --- Agent Orchestration ---
+
+  ipcMain.handle(IPC.AGENTS_LIST, () => {
+    return ctx.agentRegistry?.getAll() ?? [];
+  });
+
+  ipcMain.handle(IPC.AGENTS_REGISTER, (_event, info: AgentInfo) => {
+    ctx.agentRegistry?.register(info);
+    return { ok: true };
+  });
+
+  ipcMain.handle(IPC.AGENTS_UNREGISTER, (_event, agentId: string) => {
+    return { ok: ctx.agentRegistry?.unregister(agentId) ?? false };
+  });
+
+  ipcMain.handle(IPC.AGENTS_UPDATE_STATUS, (_event, { agentId, status }: { agentId: string; status: AgentStatus }) => {
+    return { ok: ctx.agentRegistry?.updateStatus(agentId, status) ?? false };
+  });
+
+  ipcMain.handle(IPC.AGENT_SPAWN, async (_event, opts: { name: string; profilePath?: string }) => {
+    if (!ctx.agentLifecycle) return { ok: false, error: 'Experimental mode not enabled' };
+    try {
+      const agent = await ctx.agentLifecycle.spawnAgent(opts);
+      return { ok: true, agent };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+
+  ipcMain.handle(IPC.AGENT_SEND_TEXT, async (_event, { agentId, text }: { agentId: string; text: string }) => {
+    if (!ctx.agentLifecycle) return { ok: false, error: 'Experimental mode not enabled' };
+    try {
+      await ctx.agentLifecycle.sendTextToAgent(agentId, text);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+
+  ipcMain.handle(IPC.AGENT_FOCUS, async (_event, agentId: string) => {
+    if (!ctx.agentLifecycle) return { ok: false, error: 'Experimental mode not enabled' };
+    try {
+      await ctx.agentLifecycle.focusAgent(agentId);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+
+  ipcMain.handle(IPC.AGENT_MESSAGES_LIST, () => {
+    return ctx.masterAgent?.getMessages() ?? [];
+  });
+
+  ipcMain.handle(IPC.MASTER_ROUTE_TASK, async (_event, { agentId, task }: { agentId: string; task: string }) => {
+    if (!ctx.masterAgent) return { ok: false, error: 'Experimental mode not enabled' };
+    try {
+      await ctx.masterAgent.routeTask(agentId, task);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+
+  ipcMain.handle(IPC.MASTER_MESSAGES, () => {
+    return ctx.masterAgent?.getMessages() ?? [];
+  });
+
+  // --- Connector Force Poll ---
+
+  ipcMain.handle(IPC.CONNECTORS_FORCE_POLL, async (_event, connectorId: string) => {
+    try {
+      const events = await ctx.engine.forcePoll(connectorId);
+      return { ok: true, count: events.length };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+
+  // --- Slack Bidirectional ---
+
+  ipcMain.handle(IPC.SLACK_SEND, async (_event, { channel, text, threadTs }: { channel: string; text: string; threadTs?: string }) => {
+    const slackId = findSlackConnectorId(ctx);
+    if (!slackId) return { ok: false, error: 'No Slack connector found' };
+    const connector = ctx.engine.getConnector(slackId);
+    if (!(connector instanceof SlackConnector)) return { ok: false, error: 'Not a Slack connector' };
+    try {
+      return await connector.sendMessage(channel, text, threadTs);
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+
+  ipcMain.handle(IPC.SLACK_CHANNELS, () => {
+    const slackId = findSlackConnectorId(ctx);
+    if (!slackId) return [];
+    const connector = ctx.engine.getConnector(slackId);
+    if (connector && connector instanceof SlackConnector) {
+      return connector.getMonitoredChannels();
+    }
+    return [];
+  });
+}
+
+/** Find the first Slack connector ID from engine statuses */
+function findSlackConnectorId(ctx: IPCContext): string | undefined {
+  const statuses = ctx.engine.getStatuses();
+  return statuses.find(s => s.type === 'slack')?.id;
 }
 
 /** Push events to renderer process */

@@ -32,8 +32,10 @@ export function TitleBar() {
 
   const toggleUiStyle = () => switchToStyle(uiStyle === 'normal' ? 'minimal' : 'normal');
 
+  const experimentalEnabled = config?.experimental?.enabled ?? false;
+
   return (
-    <div className={`titlebar-drag flex items-center justify-between ${uiStyle === 'minimal' ? 'h-8 pl-8 pr-4' : 'h-12 pl-10 pr-6'} bg-gray-900/60 border-b border-gray-800/50 select-none`}>
+    <div className={`titlebar-drag flex items-center justify-between ${uiStyle === 'minimal' ? 'h-8 pl-8 pr-4' : 'h-12 pl-10 pr-6'} ${experimentalEnabled ? 'bg-amber-900/30 border-b border-amber-800/50' : 'bg-gray-900/60 border-b border-gray-800/50'} select-none`}>
       <div className="flex items-center gap-3 text-xs">
         <span
           className="font-medium cursor-pointer titlebar-no-drag"
@@ -42,6 +44,12 @@ export function TitleBar() {
           <span className="text-white">iDashboard</span>
           <span className="text-gray-500"> v{__APP_VERSION__}</span>
         </span>
+
+        {experimentalEnabled && (
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-amber-600/30 text-amber-400 border border-amber-600/40">
+            Experimental
+          </span>
+        )}
 
         {config?.debug?.enabled && (
           <span className="text-gray-600 font-mono">{windowWidth}×{windowHeight}</span>

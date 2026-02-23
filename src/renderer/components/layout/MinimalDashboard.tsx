@@ -134,14 +134,25 @@ function MinimalEventCard({ event, isLatest, connectorName, onDismiss, onAction 
   const acknowledgeEvent = useDashboardStore(s => s.acknowledgeEvent);
   const isBlinking = useBlinkState(isLatest, event.id, event.timestamp);
 
+  const setActivePanel = useDashboardStore(s => s.setActivePanel);
+  const setSelectedSlackChannel = useDashboardStore(s => s.setSelectedSlackChannel);
+
   const hasFocusAction = event.uiHints?.actionButtons?.some(a => a.id === 'focus');
   const rawSessionId = (event.metadata as Record<string, string>)?.sessionId;
   const sessionName = (rawSessionId && rawSessionId !== 'unknown' ? rawSessionId : null)
     ?? event.body?.match(/Session:\s*(.+)/)?.[1];
 
+  const isSlackEvent = event.eventType === 'message-received'
+    || event.eventType === 'mention-received'
+    || event.eventType === 'dm-received';
+
   const handleClick = () => {
     acknowledgeEvent(event.id);
-    if (hasFocusAction) {
+    if (isSlackEvent) {
+      const channel = (event.metadata as Record<string, string>)?.channel;
+      if (channel) setSelectedSlackChannel(channel.replace(/^#/, ''));
+      setActivePanel('slack');
+    } else if (hasFocusAction) {
       onAction(event.connectorId, 'focus', { sessionName });
     }
   };
@@ -151,7 +162,7 @@ function MinimalEventCard({ event, isLatest, connectorName, onDismiss, onAction 
 
   return (
     <div
-      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border bg-gray-900/80 hover:bg-gray-800/80 transition-colors ${hasFocusAction ? 'cursor-pointer' : ''}`}
+      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border bg-gray-900/80 hover:bg-gray-800/80 transition-colors ${(hasFocusAction || isSlackEvent) ? 'cursor-pointer' : ''}`}
       style={{ borderColor: `${borderColor}30`, borderLeftColor: borderColor, borderLeftWidth: 3 }}
       onClick={handleClick}
     >
@@ -184,9 +195,9 @@ function MinimalEventCard({ event, isLatest, connectorName, onDismiss, onAction 
   );
 }
 
-/** Build minimal display text: prefer body, fall back to title; strip redundant prefixes */
+/** Build minimal display text: prefer title (shows which tab), fall back to body */
 function minimalText(body: string | undefined, title: string, connectorName: string): string {
-  let text = body || stripPrefix(title, connectorName);
+  let text = stripPrefix(title, connectorName) || body || title;
   // Strip "Session: " prefix — the icon already conveys context
   text = text.replace(/^Session:\s*/i, '');
   return text;

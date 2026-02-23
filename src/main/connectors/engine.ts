@@ -197,6 +197,31 @@ export class ConnectorEngine {
     }
   }
 
+  /** Force an immediate poll on a specific connector (bypasses interval timer) */
+  async forcePoll(connectorId: string): Promise<ConnectorEvent[]> {
+    const managed = this.connectors.get(connectorId);
+    if (!managed) throw new Error(`Connector not found: ${connectorId}`);
+    if (!managed.connector.capabilities.includes('pull')) {
+      log('Engine', `Force poll skipped: ${connectorId} has no 'pull' capability`);
+      return [];
+    }
+
+    log('Engine', `Force poll starting for: ${connectorId}`);
+    try {
+      const events = await managed.connector.poll();
+      log('Engine', `Force poll completed for ${connectorId}: ${events.length} event(s)`);
+      for (const event of events) {
+        this.emitEvent(event);
+      }
+      managed.circuitBreaker.recordSuccess(0);
+      return events;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError('Engine', `Force poll failed for ${connectorId}: ${msg}`);
+      throw err;
+    }
+  }
+
   /** Pause all polling (e.g., when offline) */
   pauseAll(): void {
     for (const managed of this.connectors.values()) {

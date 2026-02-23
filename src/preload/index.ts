@@ -72,6 +72,28 @@ const api = {
   getAuthStatus: (connectorId: string) => ipcRenderer.invoke(IPC.AUTH_STATUS, connectorId),
   revokeAuth: (connectorId: string) => ipcRenderer.invoke(IPC.AUTH_REVOKE, connectorId),
 
+  // Agent orchestration
+  getAgents: () => ipcRenderer.invoke(IPC.AGENTS_LIST),
+  registerAgent: (info: unknown) => ipcRenderer.invoke(IPC.AGENTS_REGISTER, info),
+  unregisterAgent: (agentId: string) => ipcRenderer.invoke(IPC.AGENTS_UNREGISTER, agentId),
+  spawnAgent: (opts: unknown) => ipcRenderer.invoke(IPC.AGENT_SPAWN, opts),
+  sendTextToAgent: (agentId: string, text: string) =>
+    ipcRenderer.invoke(IPC.AGENT_SEND_TEXT, { agentId, text }),
+  focusAgent: (agentId: string) => ipcRenderer.invoke(IPC.AGENT_FOCUS, agentId),
+  getAgentMessages: () => ipcRenderer.invoke(IPC.AGENT_MESSAGES_LIST),
+  routeTask: (agentId: string, task: string) =>
+    ipcRenderer.invoke(IPC.MASTER_ROUTE_TASK, { agentId, task }),
+  getMasterMessages: () => ipcRenderer.invoke(IPC.MASTER_MESSAGES),
+
+  // Force poll
+  forcePollConnector: (connectorId: string) =>
+    ipcRenderer.invoke(IPC.CONNECTORS_FORCE_POLL, connectorId),
+
+  // Slack bidirectional
+  slackSend: (channel: string, text: string, threadTs?: string) =>
+    ipcRenderer.invoke(IPC.SLACK_SEND, { channel, text, threadTs }),
+  slackGetChannels: () => ipcRenderer.invoke(IPC.SLACK_CHANNELS),
+
   // Subscriptions (main → renderer push)
   onEvent: (callback: (event: unknown) => void) => {
     const handler = (_: unknown, data: unknown) => callback(data);
@@ -95,6 +117,18 @@ const api = {
     const handler = (_: unknown, data: unknown) => callback(data);
     ipcRenderer.on(IPC.APP_NAVIGATE, handler);
     return () => ipcRenderer.removeListener(IPC.APP_NAVIGATE, handler);
+  },
+
+  onAgentsChanged: (callback: (agents: unknown) => void) => {
+    const handler = (_: unknown, data: unknown) => callback(data);
+    ipcRenderer.on(IPC.AGENTS_STREAM, handler);
+    return () => ipcRenderer.removeListener(IPC.AGENTS_STREAM, handler);
+  },
+
+  onAgentMessage: (callback: (message: unknown) => void) => {
+    const handler = (_: unknown, data: unknown) => callback(data);
+    ipcRenderer.on(IPC.AGENT_MESSAGES_STREAM, handler);
+    return () => ipcRenderer.removeListener(IPC.AGENT_MESSAGES_STREAM, handler);
   },
 };
 

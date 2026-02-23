@@ -280,6 +280,53 @@ export interface AppConfig {
   debug: {
     enabled: boolean;
   };
+  experimental: {
+    enabled: boolean;
+    prompt: string;
+    pmProfile: string;
+    repoPath: string;
+    agentProfilesDir: string;
+    healthCheckIntervalMs: number;
+  };
+}
+
+// --- Agent Orchestration Types ---
+
+export type AgentStatus = 'online' | 'busy' | 'idle' | 'offline' | 'stale';
+
+export interface AgentInfo {
+  id: string;
+  name: string;
+  status: AgentStatus;
+  profilePath?: string;
+  sessionName?: string;
+  registeredAt: number;
+  lastSeenAt: number;
+}
+
+export interface AgentMessage {
+  id: string;
+  from: string;
+  to: string;
+  body: string;
+  timestamp: number;
+  direction: 'inbound' | 'outbound';
+}
+
+// --- Slack Chat Types ---
+
+export interface SlackChatMessage {
+  id: string;
+  channel: string;
+  text: string;
+  timestamp: number;
+  direction: 'sent' | 'received';
+  user?: string;
+  threadTs?: string;
+  slackTs?: string;
+  eventType?: string;
+  status?: 'sending' | 'sent' | 'failed';
+  error?: string;
 }
 
 // --- IPC Types ---
@@ -413,7 +460,7 @@ export interface AggregateResult {
 
 // --- Settings Panel Types ---
 
-export type SettingsTab = 'general' | 'connectors' | 'appearance' | 'notifications' | 'network' | 'shortcuts' | 'rules' | 'debug' | 'about';
+export type SettingsTab = 'general' | 'connectors' | 'appearance' | 'notifications' | 'network' | 'shortcuts' | 'rules' | 'debug' | 'experimental' | 'about';
 
 // --- API Types ---
 

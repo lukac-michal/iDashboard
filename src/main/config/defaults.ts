@@ -100,4 +100,12 @@ export const DEFAULT_CONFIG: AppConfig = {
   debug: {
     enabled: false,
   },
+  experimental: {
+    enabled: false,
+    prompt: '',
+    pmProfile: '',
+    repoPath: '',
+    agentProfilesDir: '',
+    healthCheckIntervalMs: 10000,
+  },
 };

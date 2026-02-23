@@ -24,6 +24,7 @@ const TABS: { id: SettingsTab; label: string }[] = [
   { id: 'shortcuts', label: 'Shortcuts' },
   { id: 'rules', label: 'Rules' },
   { id: 'debug', label: 'Debug' },
+  { id: 'experimental', label: 'Experimental' },
   { id: 'about', label: 'About' },
 ];
 
@@ -60,6 +61,7 @@ export function SettingsPanel() {
         {settingsTab === 'shortcuts' && <ShortcutsSettings />}
         {settingsTab === 'rules' && <RulesSettings />}
         {settingsTab === 'debug' && <DebugSettings />}
+        {settingsTab === 'experimental' && <ExperimentalSettings />}
         {settingsTab === 'about' && <AboutSettings />}
       </div>
     </div>
@@ -250,6 +252,33 @@ function ConnectorsSettings() {
     setNewAppName('');
   };
 
+  // Slack settings helpers
+  const [newChannel, setNewChannel] = useState('');
+  const [newKeyword, setNewKeyword] = useState('');
+
+  const slackChannels: string[] = (editing?.settings?.channels as string[] | undefined) ?? [];
+  const slackKeywords: string[] = (editing?.settings?.keywordFilters as string[] | undefined) ?? [];
+  const slackMentionAlerts: boolean = (editing?.settings?.mentionAlerts as boolean | undefined) ?? true;
+
+  const setSlackSetting = (key: string, value: unknown) => {
+    if (!editing) return;
+    setEditing({ ...editing, settings: { ...editing.settings, [key]: value } });
+  };
+
+  const addChannel = () => {
+    const ch = newChannel.trim();
+    if (!ch || slackChannels.includes(ch)) return;
+    setSlackSetting('channels', [...slackChannels, ch]);
+    setNewChannel('');
+  };
+
+  const addKeyword = () => {
+    const kw = newKeyword.trim();
+    if (!kw || slackKeywords.includes(kw)) return;
+    setSlackSetting('keywordFilters', [...slackKeywords, kw]);
+    setNewKeyword('');
+  };
+
   if (editing) {
     return (
       <div className="space-y-3">
@@ -376,6 +405,102 @@ function ConnectorsSettings() {
               >
                 Add
               </button>
+            </div>
+          </>
+        )}
+
+        {/* Slack settings editor */}
+        {editing.type === 'slack' && (
+          <>
+            <SlackSetupGuideButton />
+
+            <SectionTitle>Channels</SectionTitle>
+            <div className="space-y-1">
+              {slackChannels.map((ch, i) => (
+                <div key={i} className="flex items-center gap-1 bg-gray-900/50 rounded px-2 py-1 border border-gray-800/30">
+                  <span className="text-xs text-gray-200 flex-1">{ch}</span>
+                  <button
+                    onClick={() => setSlackSetting('channels', slackChannels.filter((_, j) => j !== i))}
+                    className="text-[10px] text-red-400 hover:text-red-300 px-1"
+                    title="Remove"
+                  >x</button>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-1">
+              <input
+                value={newChannel}
+                onChange={e => setNewChannel(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') addChannel(); }}
+                placeholder="#channel-name"
+                className="settings-input flex-1"
+              />
+              <button
+                onClick={addChannel}
+                disabled={!newChannel.trim()}
+                className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-40"
+              >
+                Add
+              </button>
+            </div>
+
+            <SectionTitle>Keyword Filters</SectionTitle>
+            <div className="text-[10px] text-gray-500 -mt-1 mb-1">
+              Empty = all messages
+            </div>
+            <div className="space-y-1">
+              {slackKeywords.map((kw, i) => (
+                <div key={i} className="flex items-center gap-1 bg-gray-900/50 rounded px-2 py-1 border border-gray-800/30">
+                  <span className="text-xs text-gray-200 flex-1">{kw}</span>
+                  <button
+                    onClick={() => setSlackSetting('keywordFilters', slackKeywords.filter((_, j) => j !== i))}
+                    className="text-[10px] text-red-400 hover:text-red-300 px-1"
+                    title="Remove"
+                  >x</button>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-1">
+              <input
+                value={newKeyword}
+                onChange={e => setNewKeyword(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') addKeyword(); }}
+                placeholder="keyword"
+                className="settings-input flex-1"
+              />
+              <button
+                onClick={addKeyword}
+                disabled={!newKeyword.trim()}
+                className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-300 disabled:opacity-40"
+              >
+                Add
+              </button>
+            </div>
+
+            <SectionTitle>Mention Alerts</SectionTitle>
+            <SettingRow label="Highlight @mentions">
+              <ToggleSwitch
+                checked={slackMentionAlerts}
+                onChange={v => setSlackSetting('mentionAlerts', v)}
+              />
+            </SettingRow>
+            <div className="pl-40 -mt-1 mb-1">
+              <span className="text-[10px] text-gray-500">
+                Highlight messages with @mentions
+              </span>
+            </div>
+
+            <SectionTitle>DM Monitoring</SectionTitle>
+            <SettingRow label="Monitor DMs">
+              <ToggleSwitch
+                checked={(editing?.settings?.dmEnabled as boolean | undefined) ?? false}
+                onChange={v => setSlackSetting('dmEnabled', v)}
+              />
+            </SettingRow>
+            <div className="pl-40 -mt-1 mb-1">
+              <span className="text-[10px] text-gray-500">
+                Monitor direct messages sent to the bot
+              </span>
             </div>
           </>
         )}
@@ -876,6 +1001,292 @@ function AboutSettings() {
           Export as CSV
         </button>
       </div>
+    </div>
+  );
+}
+
+// --- Experimental Settings ---
+
+function ExperimentalSettings() {
+  const config = useDashboardStore(s => s.config);
+  if (!config) return <Loading />;
+
+  const exp = config.experimental ?? { enabled: false, prompt: '', pmProfile: '', repoPath: '', agentProfilesDir: '', healthCheckIntervalMs: 10000 };
+
+  const update = (partial: Partial<AppConfig['experimental']>) => {
+    window.iDashboard?.updateConfig({ experimental: { ...exp, ...partial } });
+  };
+
+  return (
+    <div className="space-y-4">
+      <SectionTitle>Experimental Mode</SectionTitle>
+      <SettingRow label="Enable Experimental">
+        <ToggleSwitch
+          checked={exp.enabled}
+          onChange={v => update({ enabled: v })}
+        />
+      </SettingRow>
+      <div className="pl-40 -mt-1 mb-1">
+        <span className="text-[10px] text-gray-500">
+          Enables multi-agent orchestration. Replaces History tab with Orchestrator and shows an amber title bar badge.
+        </span>
+      </div>
+
+      <SectionTitle>Repository</SectionTitle>
+      <SettingRow label="Repo Path">
+        <input
+          value={exp.repoPath}
+          onChange={e => update({ repoPath: e.target.value })}
+          className="settings-input flex-1"
+          placeholder="/path/to/repo"
+        />
+      </SettingRow>
+      <SettingRow label="Agent Profiles Dir">
+        <input
+          value={exp.agentProfilesDir}
+          onChange={e => update({ agentProfilesDir: e.target.value })}
+          className="settings-input flex-1"
+          placeholder=".claude/agents/"
+        />
+      </SettingRow>
+
+      <SectionTitle>Master Agent</SectionTitle>
+      <div className="space-y-1">
+        <span className="text-xs text-gray-400">System Prompt</span>
+        <textarea
+          value={exp.prompt}
+          onChange={e => update({ prompt: e.target.value })}
+          className="settings-input w-full h-24 resize-y"
+          placeholder="Master agent system prompt..."
+        />
+      </div>
+      <div className="space-y-1">
+        <span className="text-xs text-gray-400">PM Profile</span>
+        <textarea
+          value={exp.pmProfile}
+          onChange={e => update({ pmProfile: e.target.value })}
+          className="settings-input w-full h-24 resize-y"
+          placeholder="PM agent profile markdown..."
+        />
+      </div>
+
+      <SectionTitle>Health</SectionTitle>
+      <SettingRow label="Health Check Interval (ms)">
+        <input
+          type="number"
+          value={exp.healthCheckIntervalMs}
+          onChange={e => update({ healthCheckIntervalMs: parseInt(e.target.value) || 10000 })}
+          className="settings-input w-24"
+        />
+      </SettingRow>
+    </div>
+  );
+}
+
+// --- Slack Setup Guide ---
+
+function SlackSetupGuideButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 rounded hover:bg-indigo-600/30 transition-colors"
+      >
+        <span>?</span>
+        <span>Setup Guide</span>
+      </button>
+      {open && <SlackSetupGuideModal onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+function SlackSetupGuideModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-700">
+          <h3 className="text-sm font-medium text-gray-200">Slack Bot Setup Guide</h3>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-300 text-lg leading-none">x</button>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-5 text-xs text-gray-300 leading-relaxed">
+
+          {/* Step 1 */}
+          <GuideSection number={1} title="Create the Slack App">
+            <ol className="list-decimal list-inside space-y-1 text-gray-400">
+              <li>Go to <span className="text-indigo-300 font-mono">api.slack.com/apps</span></li>
+              <li>Click <Strong>Create New App</Strong> &rarr; <Strong>From scratch</Strong></li>
+              <li>Enter an app name (e.g. &quot;iDashboard Bot&quot;) and select your workspace</li>
+              <li>Click <Strong>Create App</Strong></li>
+            </ol>
+          </GuideSection>
+
+          {/* Step 2 */}
+          <GuideSection number={2} title="Add Bot Token Scopes">
+            <p className="text-gray-400 mb-2">
+              In the app dashboard &rarr; <Strong>OAuth &amp; Permissions</Strong> &rarr; <Strong>Bot Token Scopes</Strong>, add:
+            </p>
+            <ScopeTable
+              title="Channel monitoring (required)"
+              scopes={[
+                ['channels:history', 'Read public channel messages'],
+                ['channels:read', 'List public channels'],
+                ['chat:write', 'Send messages'],
+              ]}
+            />
+            <ScopeTable
+              title="DM monitoring (enable in settings below)"
+              scopes={[
+                ['im:history', 'Read DMs sent to the bot'],
+                ['im:write', 'Open DM conversations'],
+              ]}
+            />
+            <ScopeTable
+              title="Optional extras"
+              scopes={[
+                ['groups:history', 'Read private channel messages'],
+                ['groups:read', 'List private channels'],
+                ['reactions:write', 'Add emoji reactions'],
+                ['users:read', 'Resolve user display names'],
+              ]}
+            />
+          </GuideSection>
+
+          {/* Step 3 */}
+          <GuideSection number={3} title="Install to Workspace">
+            <ol className="list-decimal list-inside space-y-1 text-gray-400">
+              <li>On the <Strong>OAuth &amp; Permissions</Strong> page, click <Strong>Install to Workspace</Strong></li>
+              <li>Review and click <Strong>Allow</Strong></li>
+              <li>Copy the <Strong>Bot User OAuth Token</Strong> &mdash; it starts with <code className="text-amber-300/80 bg-gray-800 px-1 rounded">xoxb-</code></li>
+            </ol>
+            <Tip>If you change scopes later, you must reinstall the app for changes to take effect.</Tip>
+          </GuideSection>
+
+          {/* Step 4 */}
+          <GuideSection number={4} title="Configure in iDashboard">
+            <ol className="list-decimal list-inside space-y-1.5 text-gray-400">
+              <li>Set <Strong>Auth Type</Strong> to <Strong>Bearer Token</Strong></li>
+              <li>Paste the <code className="text-amber-300/80 bg-gray-800 px-1 rounded">xoxb-...</code> token in the <Strong>Token</Strong> field</li>
+              <li>Add channels below (e.g. <code className="text-amber-300/80 bg-gray-800 px-1 rounded">#general</code>)</li>
+              <li>Optionally add keyword filters or enable mention alerts</li>
+            </ol>
+          </GuideSection>
+
+          {/* Step 5 */}
+          <GuideSection number={5} title="Invite the Bot to Channels">
+            <p className="text-gray-400 mb-2">
+              The bot can only read channels it has been invited to. In each Slack channel:
+            </p>
+            <code className="block bg-gray-800 rounded px-3 py-2 text-amber-300/80 font-mono">
+              /invite @YourBotName
+            </code>
+          </GuideSection>
+
+          {/* Step 6 - DM setup */}
+          <GuideSection number={6} title="Enable DM Monitoring">
+            <p className="text-gray-400 mb-2">
+              To receive events when someone DMs the bot directly in Slack:
+            </p>
+            <ol className="list-decimal list-inside space-y-1.5 text-gray-400">
+              <li>Ensure scopes <code className="text-amber-300/80 bg-gray-800 px-1 rounded">im:history</code> and <code className="text-amber-300/80 bg-gray-800 px-1 rounded">im:write</code> are added (step 2 above)</li>
+              <li>Reinstall the app if you just added those scopes</li>
+              <li>Toggle <Strong>Monitor DMs</Strong> on in the settings below</li>
+              <li>iDashboard will auto-resolve the DM channel on next connector restart</li>
+            </ol>
+            <Tip>
+              DM events appear with a &quot;Reply&quot; action button. The bot&apos;s own messages are automatically filtered out.
+            </Tip>
+          </GuideSection>
+
+          {/* Troubleshooting */}
+          <GuideSection number={7} title="Troubleshooting">
+            <div className="space-y-2 text-gray-400">
+              <TroubleshootItem
+                problem="Connector shows disconnected"
+                solution="Check the token is correct and starts with xoxb-. Verify the app is installed to the workspace."
+              />
+              <TroubleshootItem
+                problem="No messages appear from a channel"
+                solution="Invite the bot to the channel with /invite @BotName. Check the channel name matches exactly."
+              />
+              <TroubleshootItem
+                problem="DM monitoring not working"
+                solution="Ensure im:history and im:write scopes are added and the app is reinstalled. Check the connector status indicator."
+              />
+              <TroubleshootItem
+                problem="Rate limit errors (429)"
+                solution="Increase the poll interval in connector settings. Slack allows ~50 req/min for conversations.history."
+              />
+            </div>
+          </GuideSection>
+
+        </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-gray-700 flex justify-end">
+          <button onClick={onClose} className="px-4 py-1.5 bg-gray-700 text-gray-300 text-xs rounded hover:bg-gray-600">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GuideSection({ number, title, children }: { number: number; title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="w-5 h-5 rounded-full bg-indigo-600/30 text-indigo-300 flex items-center justify-center text-[10px] font-bold flex-shrink-0">
+          {number}
+        </span>
+        <h4 className="text-xs font-semibold text-gray-200 uppercase tracking-wider">{title}</h4>
+      </div>
+      <div className="pl-7">{children}</div>
+    </div>
+  );
+}
+
+function ScopeTable({ title, scopes }: { title: string; scopes: [string, string][] }) {
+  return (
+    <div className="mb-3">
+      <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">{title}</div>
+      <div className="bg-gray-800/50 rounded border border-gray-700/50 divide-y divide-gray-700/30">
+        {scopes.map(([scope, desc]) => (
+          <div key={scope} className="flex items-center gap-3 px-3 py-1.5">
+            <code className="text-amber-300/80 font-mono text-[11px] w-36 flex-shrink-0">{scope}</code>
+            <span className="text-gray-400">{desc}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Strong({ children }: { children: React.ReactNode }) {
+  return <span className="text-gray-200 font-medium">{children}</span>;
+}
+
+function Tip({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-2 flex gap-2 bg-indigo-500/10 border border-indigo-500/20 rounded px-3 py-2 text-indigo-200/80">
+      <span className="flex-shrink-0">i</span>
+      <span>{children}</span>
+    </div>
+  );
+}
+
+function TroubleshootItem({ problem, solution }: { problem: string; solution: string }) {
+  return (
+    <div className="bg-gray-800/50 rounded px-3 py-2 border border-gray-700/30">
+      <div className="text-gray-300 font-medium mb-0.5">{problem}</div>
+      <div className="text-gray-500">{solution}</div>
     </div>
   );
 }
