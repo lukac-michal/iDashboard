@@ -1,28 +1,27 @@
 // ============================================================
-// AdaptiveGrid - Fluid layout based on window dimensions
+// AdaptiveGrid - Tabbed connector view with auto-tab-switching
 // ============================================================
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useDashboardStore } from '@renderer/store/dashboard';
-import { useWindowSize } from '@renderer/hooks/useWindowSize';
-import { ConnectorWidget } from '@renderer/components/widgets/ConnectorWidget';
-import { COLUMN_WIDTH_UNIT } from '@shared/constants';
+import { EventCard } from '@renderer/components/widgets/EventCard';
 
 const SEVERITIES = ['info', 'warning', 'error', 'critical', 'attention'] as const;
 const PAGE_SIZE = 8;
 
 export function AdaptiveGrid() {
-  const { width } = useWindowSize();
   const activeEvents = useDashboardStore(s => s.activeEvents);
   const connectors = useDashboardStore(s => s.connectors);
   const dismissEvent = useDashboardStore(s => s.dismissEvent);
+  const eventCounter = useDashboardStore(s => s.eventCounter);
+  const activeConnectorTab = useDashboardStore(s => s.activeConnectorTab);
+  const setActiveConnectorTab = useDashboardStore(s => s.setActiveConnectorTab);
 
-  // Sets for multiselect — empty set means "all selected"
-  const [selectedConnectors, setSelectedConnectors] = useState<Set<string>>(new Set());
   const [selectedSeverities, setSelectedSeverities] = useState<Set<string>>(new Set());
+  const [showSeverityFilter, setShowSeverityFilter] = useState(false);
   const [page, setPage] = useState(1);
 
-  const columns = Math.max(1, Math.floor(width / COLUMN_WIDTH_UNIT));
+  const prevCounterRef = useRef(eventCounter);
 
   // Build connector list from known connectors + orphan connectorIds
   const connectorList = useMemo(() => {
@@ -35,22 +34,26 @@ export function AdaptiveGrid() {
     });
   }, [connectors, activeEvents]);
 
-  const allConnectorsSelected = selectedConnectors.size === 0;
-  const allSeveritiesSelected = selectedSeverities.size === 0;
+  // Count events per connector (before severity filter, so tab counts stay stable)
+  const eventCountByConnector = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const e of activeEvents) {
+      counts.set(e.connectorId, (counts.get(e.connectorId) ?? 0) + 1);
+    }
+    return counts;
+  }, [activeEvents]);
 
-  const toggleConnector = useCallback((id: string) => {
-    setSelectedConnectors(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      // If all are now selected, reset to empty (= all)
-      if (connectorList.length > 0 && next.size === connectorList.length) return new Set();
-      return next;
-    });
-  }, [connectorList.length]);
+  // Auto-tab-switch on new events
+  useEffect(() => {
+    if (eventCounter > prevCounterRef.current && activeEvents.length > 0) {
+      const latestEvent = activeEvents[0];
+      setActiveConnectorTab(latestEvent.connectorId);
+    }
+    prevCounterRef.current = eventCounter;
+  }, [eventCounter, activeEvents, setActiveConnectorTab]);
+
+  const allSeveritiesSelected = selectedSeverities.size === 0;
+  const hasSeverityFilter = !allSeveritiesSelected;
 
   const toggleSeverity = useCallback((sev: string) => {
     setSelectedSeverities(prev => {
@@ -65,24 +68,22 @@ export function AdaptiveGrid() {
     });
   }, []);
 
-  const selectAllConnectors = useCallback(() => setSelectedConnectors(new Set()), []);
   const selectAllSeverities = useCallback(() => setSelectedSeverities(new Set()), []);
 
-  // Apply filters
-  const hasFilters = !allConnectorsSelected || !allSeveritiesSelected;
+  // Apply filters: connector tab + severity
+  const hasFilters = activeConnectorTab !== null || hasSeverityFilter;
   const filteredEvents = useMemo(() => {
     return activeEvents.filter(e => {
-      if (!allConnectorsSelected && !selectedConnectors.has(e.connectorId)) return false;
-      if (!allSeveritiesSelected && !selectedSeverities.has(e.severity)) return false;
+      if (activeConnectorTab !== null && e.connectorId !== activeConnectorTab) return false;
+      if (hasSeverityFilter && !selectedSeverities.has(e.severity)) return false;
       return true;
     });
-  }, [activeEvents, selectedConnectors, selectedSeverities, allConnectorsSelected, allSeveritiesSelected]);
+  }, [activeEvents, activeConnectorTab, selectedSeverities, hasSeverityFilter]);
 
-  // Global pagination
+  // Pagination
   const totalPages = Math.max(1, Math.ceil(filteredEvents.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
 
-  // Reset to page 1 when filters or event count change
   useEffect(() => {
     setPage(1);
   }, [filteredEvents.length, hasFilters]);
@@ -92,47 +93,15 @@ export function AdaptiveGrid() {
     return filteredEvents.slice(start, start + PAGE_SIZE);
   }, [filteredEvents, safePage]);
 
-  // Group paged events by connector
-  const eventsByConnector = useMemo(() => {
-    const map = new Map<string, typeof pagedEvents>();
-    for (const event of pagedEvents) {
-      const existing = map.get(event.connectorId) ?? [];
-      existing.push(event);
-      map.set(event.connectorId, existing);
-    }
-    return map;
-  }, [pagedEvents]);
-
-  // Sort connectors: those with events first, then by priority
-  const sortedConnectors = useMemo(() => {
-    return [...connectors].sort((a, b) => {
-      const aEvents = eventsByConnector.get(a.id)?.length ?? 0;
-      const bEvents = eventsByConnector.get(b.id)?.length ?? 0;
-      if (aEvents > 0 && bEvents === 0) return -1;
-      if (bEvents > 0 && aEvents === 0) return 1;
-      return 0;
-    });
-  }, [connectors, eventsByConnector]);
-
   const handleAction = (connectorId: string, actionId: string, params?: unknown) => {
     window.iDashboard?.executeAction(connectorId, actionId, params);
   };
 
-  // For connectors with no status yet but have events, create a placeholder
-  const connectorIds = new Set(connectors.map(c => c.id));
-  const orphanEvents = [...eventsByConnector.entries()]
-    .filter(([id]) => !connectorIds.has(id));
-
   const latestEventId = filteredEvents[0]?.id;
-  const colWidth = Math.floor(width / columns);
 
-  // Count how many connectors actually have events to display
-  const activeConnectorCount = sortedConnectors.filter(c => (eventsByConnector.get(c.id)?.length ?? 0) > 0).length
-    + orphanEvents.length;
-
-  // Use fewer columns when there are fewer connectors with events
-  const effectiveColumns = Math.max(1, Math.min(columns, activeConnectorCount));
-  const effectiveColWidth = Math.floor(width / effectiveColumns);
+  const tabBase = 'px-3 py-1.5 text-[11px] cursor-pointer transition-colors select-none border-b-2';
+  const tabActive = 'bg-indigo-500/20 text-indigo-300 border-indigo-400';
+  const tabInactive = 'text-gray-500 hover:text-gray-300 hover:bg-gray-800/30 border-transparent';
 
   const chipBase = 'px-2 py-0.5 rounded-full text-[10px] cursor-pointer transition-colors select-none';
   const chipOn = 'bg-gray-700 text-gray-200';
@@ -140,36 +109,57 @@ export function AdaptiveGrid() {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      {/* Filter bar */}
-      <div className="flex items-center gap-2 px-6 py-2.5 flex-shrink-0 flex-wrap">
-        <span className="text-[10px] text-gray-600 mr-0.5">Source:</span>
-        <button
-          className={`${chipBase} ${allConnectorsSelected ? chipOn : chipOff}`}
-          onClick={selectAllConnectors}
-        >All</button>
-        {connectorList.map(c => (
+      {/* Connector tabs + filter icon */}
+      <div className="flex items-center px-6 pt-2.5 pb-0 flex-shrink-0 border-b border-gray-800/50">
+        <div className="flex items-center gap-0.5 flex-1 min-w-0">
           <button
-            key={c.value}
-            className={`${chipBase} ${!allConnectorsSelected && selectedConnectors.has(c.value) ? chipOn : allConnectorsSelected ? chipOn : chipOff}`}
-            onClick={() => toggleConnector(c.value)}
-          >{c.label}</button>
-        ))}
-
-        <span className="text-gray-800 mx-1">|</span>
-
-        <span className="text-[10px] text-gray-600 mr-0.5">Severity:</span>
+            className={`${tabBase} ${activeConnectorTab === null ? tabActive : tabInactive}`}
+            onClick={() => setActiveConnectorTab(null)}
+          >
+            All ({activeEvents.length})
+          </button>
+          {connectorList.map(c => (
+            <button
+              key={c.value}
+              className={`${tabBase} ${activeConnectorTab === c.value ? tabActive : tabInactive}`}
+              onClick={() => setActiveConnectorTab(c.value)}
+            >
+              {c.label} ({eventCountByConnector.get(c.value) ?? 0})
+            </button>
+          ))}
+        </div>
         <button
-          className={`${chipBase} ${allSeveritiesSelected ? chipOn : chipOff}`}
-          onClick={selectAllSeverities}
-        >All</button>
-        {SEVERITIES.map(sev => (
-          <button
-            key={sev}
-            className={`${chipBase} ${!allSeveritiesSelected && selectedSeverities.has(sev) ? chipOn : allSeveritiesSelected ? chipOn : chipOff}`}
-            onClick={() => toggleSeverity(sev)}
-          >{sev.charAt(0).toUpperCase() + sev.slice(1)}</button>
-        ))}
+          className={`ml-2 mb-0.5 w-7 h-7 flex items-center justify-center rounded transition-colors ${
+            showSeverityFilter || hasSeverityFilter
+              ? 'text-indigo-400 bg-indigo-500/15 hover:bg-indigo-500/25'
+              : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800/50'
+          }`}
+          onClick={() => setShowSeverityFilter(prev => !prev)}
+          title="Toggle severity filter"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+          </svg>
+        </button>
       </div>
+
+      {/* Severity filter (collapsible) */}
+      {showSeverityFilter && (
+        <div className="flex items-center gap-2 px-6 py-2 flex-shrink-0 flex-wrap border-b border-gray-800/30">
+          <span className="text-[10px] text-gray-600 mr-0.5">Severity:</span>
+          <button
+            className={`${chipBase} ${allSeveritiesSelected ? chipOn : chipOff}`}
+            onClick={selectAllSeverities}
+          >All</button>
+          {SEVERITIES.map(sev => (
+            <button
+              key={sev}
+              className={`${chipBase} ${!allSeveritiesSelected && selectedSeverities.has(sev) ? chipOn : allSeveritiesSelected ? chipOn : chipOff}`}
+              onClick={() => toggleSeverity(sev)}
+            >{sev.charAt(0).toUpperCase() + sev.slice(1)}</button>
+          ))}
+        </div>
+      )}
 
       {/* Empty state */}
       {filteredEvents.length === 0 ? (
@@ -188,51 +178,18 @@ export function AdaptiveGrid() {
         </div>
       ) : (
 
-      /* Event grid */
-      <div
-        className="flex-1 min-h-0 overflow-y-auto p-6"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: `repeat(${effectiveColumns}, 1fr)`,
-          gap: '16px',
-          alignContent: 'start',
-        }}
-      >
-      {sortedConnectors.map((connector) => {
-        const events = eventsByConnector.get(connector.id) ?? [];
-        if (events.length === 0) return null;
-
-        return (
-          <ConnectorWidget
-            key={connector.id}
-            connector={connector}
-            events={events}
-            containerWidth={effectiveColWidth}
-            latestEventId={latestEventId}
+      /* Single-column event list */
+      <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-3">
+        {pagedEvents.map((event) => (
+          <EventCard
+            key={event.id}
+            event={event}
+            containerWidth={800}
+            isLatest={event.id === latestEventId}
             onDismiss={dismissEvent}
             onAction={handleAction}
           />
-        );
-      })}
-
-      {/* Orphan events from connectors not in the status list */}
-      {orphanEvents.map(([connectorId, events]) => (
-        <ConnectorWidget
-          key={connectorId}
-          connector={{
-            id: connectorId,
-            type: 'unknown',
-            displayName: connectorId,
-            connected: true,
-            eventCount: events.length,
-          }}
-          events={events}
-          containerWidth={effectiveColWidth}
-          latestEventId={latestEventId}
-          onDismiss={dismissEvent}
-          onAction={handleAction}
-        />
-      ))}
+        ))}
       </div>
       )}
 

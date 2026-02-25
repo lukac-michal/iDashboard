@@ -4,6 +4,7 @@
 
 import { app, net, safeStorage } from 'electron';
 import * as path from 'node:path';
+import * as fs from 'node:fs';
 import * as os from 'node:os';
 
 import { ConfigLoader } from './config/loader';
@@ -32,9 +33,11 @@ import { IPC } from '@shared/ipc-channels';
 import { meetsMinSeverity } from '@shared/constants';
 import { LogCollector } from './services/log-collector';
 import { AgentRegistry } from './services/agent-registry';
-import { ITerm2Adapter } from './services/iterm2-adapter';
+import { createTerminalAdapter } from './services/terminal-factory';
 import { AgentLifecycleService } from './services/agent-lifecycle';
 import { MasterAgentService } from './services/master-agent';
+import { SlackBridgeService } from './services/slack-bridge';
+import { SlackChannelLogger } from './services/slack-channel-logger';
 import { log, warn, error as logError, setLogCollector } from './utils/log';
 import type { ConnectorEvent, AppConfig, ConnectorConfig } from '@shared/types';
 
@@ -56,6 +59,8 @@ let logCollector: LogCollector;
 let agentRegistry: AgentRegistry | undefined;
 let agentLifecycle: AgentLifecycleService | undefined;
 let masterAgent: MasterAgentService | undefined;
+let slackBridge: SlackBridgeService | undefined;
+let slackChannelLogger: SlackChannelLogger | undefined;
 
 async function bootstrap(): Promise<void> {
   // --- Log Collector (before anything else so all logs are captured) ---
@@ -154,15 +159,6 @@ async function bootstrap(): Promise<void> {
     eventStore.insert(processed);
     aggregator.recordEvent(processed);
 
-    // Push to renderer
-    const win = windowManager.getWindow();
-    if (win && !win.isDestroyed()) {
-      pushToRenderer(win, IPC.EVENTS_STREAM, processed);
-      log('Event', `Pushed to renderer: id=${processed.id}`);
-    } else {
-      warn('Event', 'Window not available, cannot push to renderer');
-    }
-
     // Bridge Slack events into master agent message feed
     if (masterAgent && processed.connectorId) {
       const connStatus = connectorEngine.getStatuses().find(s => s.id === processed.connectorId);
@@ -172,6 +168,24 @@ async function bootstrap(): Promise<void> {
           processed.body ?? processed.title,
         );
       }
+    }
+
+    // Forward bridge events to Slack / reverse Slack replies to terminal
+    if (slackBridge) {
+      slackBridge.handleEvent(processed);
+      slackBridge.handleInboundEvent(processed);
+    }
+
+    // Bridge-output events are for Slack forwarding only — don't surface in dashboard
+    if (processed.dismissed) return;
+
+    // Push to renderer
+    const win = windowManager.getWindow();
+    if (win && !win.isDestroyed()) {
+      pushToRenderer(win, IPC.EVENTS_STREAM, processed);
+      log('Event', `Pushed to renderer: id=${processed.id}`);
+    } else {
+      warn('Event', 'Window not available, cannot push to renderer');
     }
 
     // Surface window + play sound based on configured severity thresholds
@@ -187,12 +201,34 @@ async function bootstrap(): Promise<void> {
     }
   });
 
-  // Start connectors
+  // Register all connectors (addConnector parks disabled ones for display)
   for (const cc of connectorConfigs) {
-    if (cc.enabled) {
-      await connectorEngine.addConnector(cc);
+    await connectorEngine.addConnector(cc);
+  }
+
+  // --- Slack Channel Logger ---
+  slackChannelLogger = new SlackChannelLogger();
+  log('Main', `Slack channel logs → ~/.idashboard/logs/slack/`);
+
+  // Attach logger to Slack connector(s)
+  for (const cc of connectorConfigs) {
+    if (cc.type === 'slack' && cc.enabled) {
+      const connector = connectorEngine.getConnector(cc.id);
+      if (connector && 'setChannelLogger' in connector) {
+        (connector as import('./connectors/slack').SlackConnector).setChannelLogger(slackChannelLogger);
+      }
     }
   }
+
+  // --- Slack Bridge ---
+  if (config.slackBridge?.enabled && config.slackBridge.targetChannel) {
+    const bridgeTerminal = config.slackBridge.reverseEnabled ? createTerminalAdapter() : null;
+    slackBridge = new SlackBridgeService(connectorEngine, config.slackBridge, bridgeTerminal, slackChannelLogger);
+    log('Main', `Slack Bridge enabled → ${config.slackBridge.targetChannel}${config.slackBridge.reverseEnabled ? ' (bidirectional)' : ''}`);
+  }
+
+  // --- Hook Script Auto-Setup ---
+  setupBridgeHookScript(configDir);
 
   // --- Window ---
   const preloadPath = path.join(__dirname, '../preload/index.js');
@@ -229,7 +265,18 @@ async function bootstrap(): Promise<void> {
   });
   shortcutService.onAction('toggle-fullscreen', () => {
     const win = windowManager.getWindow();
-    if (win) win.setFullScreen(!win.isFullScreen());
+    if (!win) return;
+    // Use maximize/unmaximize instead of native fullscreen —
+    // native fullscreen on a frameless+transparent window is unrecoverable
+    if (win.isFullScreen()) win.setFullScreen(false);
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  });
+  shortcutService.onAction('escape-fullscreen', () => {
+    const win = windowManager.getWindow();
+    if (!win) return;
+    if (win.isFullScreen()) win.setFullScreen(false);
+    if (win.isMaximized()) win.unmaximize();
   });
   shortcutService.onAction('dismiss-all', () => {
     const active = eventStore.getActive();
@@ -253,10 +300,10 @@ async function bootstrap(): Promise<void> {
   if (config.experimental?.enabled) {
     log('Main', 'Experimental mode enabled — initializing agent orchestration');
     agentRegistry = new AgentRegistry(config.experimental.healthCheckIntervalMs * 3);
-    const iterm2Adapter = new ITerm2Adapter();
+    const terminalAdapter = createTerminalAdapter();
     agentLifecycle = new AgentLifecycleService(
       agentRegistry,
-      iterm2Adapter,
+      terminalAdapter,
       config.experimental.repoPath || process.cwd(),
     );
     masterAgent = new MasterAgentService(agentLifecycle, agentRegistry, connectorEngine);
@@ -311,6 +358,17 @@ async function bootstrap(): Promise<void> {
       if (partial.notifications?.sound) {
         soundService.configure(partial.notifications.sound as AppConfig['notifications']['sound']);
       }
+      if (partial.slackBridge) {
+        if (slackBridge) {
+          slackBridge.updateConfig(config.slackBridge);
+        } else if (config.slackBridge?.enabled && config.slackBridge.targetChannel) {
+          const bridgeTerminal = config.slackBridge.reverseEnabled ? createTerminalAdapter() : null;
+          slackBridge = new SlackBridgeService(connectorEngine, config.slackBridge, bridgeTerminal, slackChannelLogger);
+          log('Main', `Slack Bridge enabled via settings → ${config.slackBridge.targetChannel}`);
+        }
+        // Persist slackBridge config changes to disk
+        configLoader.saveAppConfig(config);
+      }
       if (partial.startup?.appMode !== undefined) {
         if (partial.startup.appMode === 'menubar') {
           app.dock?.hide();
@@ -354,6 +412,7 @@ async function bootstrap(): Promise<void> {
     aggregator,
     config,
     broadcastEvent: () => {},
+    slackBridge,
   });
   await startAPIServer(apiServer, config.api.port, config.api.bind);
 
@@ -400,6 +459,38 @@ async function bootstrap(): Promise<void> {
   log('Main', 'iDashboard ready');
 }
 
+/** Copy the bridge hook script from resources to ~/.idashboard/hooks/ if not already present */
+function setupBridgeHookScript(configDir: string): void {
+  const hooksDir = path.join(configDir, 'hooks');
+  const targetScript = path.join(hooksDir, 'claude-bridge.py');
+
+  // Don't overwrite if user has customized the script
+  if (fs.existsSync(targetScript)) return;
+
+  try {
+    fs.mkdirSync(hooksDir, { recursive: true });
+
+    // In production, resources are in the app bundle; in dev, they're relative to __dirname
+    const candidates = [
+      path.join(__dirname, '../../resources/hooks/claude-bridge.py'),
+      path.join(app.getAppPath(), 'resources/hooks/claude-bridge.py'),
+    ];
+
+    for (const src of candidates) {
+      if (fs.existsSync(src)) {
+        fs.copyFileSync(src, targetScript);
+        fs.chmodSync(targetScript, 0o755);
+        log('Main', `Installed bridge hook script to ${targetScript}`);
+        return;
+      }
+    }
+
+    log('Main', 'Bridge hook script source not found — skipping auto-install');
+  } catch (err) {
+    warn('Main', `Failed to install bridge hook script: ${err}`);
+  }
+}
+
 // --- App Lifecycle ---
 
 app.whenReady().then(bootstrap).catch((err) => {
@@ -423,6 +514,8 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', async () => {
+  slackChannelLogger?.destroy();
+  slackBridge?.destroy();
   agentLifecycle?.destroy();
   shortcutService?.destroy();
   tokenRefreshService?.stop();

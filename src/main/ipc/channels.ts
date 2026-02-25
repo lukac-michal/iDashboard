@@ -3,7 +3,11 @@
 // ============================================================
 
 import { ipcMain, BrowserWindow } from 'electron';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import { IPC } from '@shared/ipc-channels';
+import { log, warn } from '@main/utils/log';
 import type { ConnectorEngine } from '@main/connectors/engine';
 import type { EventStore } from '@main/db/event-store';
 import type { Aggregator } from '@main/db/aggregator';
@@ -348,12 +352,67 @@ export function registerIPCHandlers(ctx: IPCContext): void {
     }
     return [];
   });
+
+  // --- Slack Bridge Hook Installation ---
+
+  ipcMain.handle(IPC.SLACK_BRIDGE_INSTALL_HOOKS, () => {
+    return installSlackBridgeHooks();
+  });
 }
 
 /** Find the first Slack connector ID from engine statuses */
 function findSlackConnectorId(ctx: IPCContext): string | undefined {
   const statuses = ctx.engine.getStatuses();
   return statuses.find(s => s.type === 'slack')?.id;
+}
+
+/** Install Claude Code hooks for the Slack bridge into ~/.claude/settings.json */
+function installSlackBridgeHooks(): { ok: boolean; error?: string } {
+  const hookScript = path.join(os.homedir(), '.idashboard', 'hooks', 'claude-bridge.py');
+  const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+
+  if (!fs.existsSync(hookScript)) {
+    return { ok: false, error: `Hook script not found at ${hookScript}` };
+  }
+
+  try {
+    let settings: Record<string, unknown> = {};
+    if (fs.existsSync(settingsPath)) {
+      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+    }
+
+    const hooks = (settings.hooks ?? {}) as Record<string, unknown[]>;
+
+    // Claude Code hook format: each entry needs { hooks: [{ type, command }] }
+    const bridgeHooks: Record<string, { hooks: Array<{ type: string; command: string }> }> = {
+      Stop: { hooks: [{ type: 'command', command: `python3 ${hookScript} stop` }] },
+      SubagentStop: { hooks: [{ type: 'command', command: `python3 ${hookScript} subagent-stop` }] },
+      PostToolUse: { hooks: [{ type: 'command', command: `python3 ${hookScript} tool-use` }] },
+      UserPromptSubmit: { hooks: [{ type: 'command', command: `python3 ${hookScript} user-prompt` }] },
+    };
+
+    for (const [hookType, hookDef] of Object.entries(bridgeHooks)) {
+      const existing = (hooks[hookType] ?? []) as Array<Record<string, unknown>>;
+      // Don't add duplicate — check if our command is already registered
+      const alreadyInstalled = existing.some(h => {
+        const innerHooks = h.hooks as Array<Record<string, unknown>> | undefined;
+        if (!innerHooks) return typeof h.command === 'string' && (h.command as string).includes('claude-bridge.py');
+        return innerHooks.some(ih => typeof ih.command === 'string' && (ih.command as string).includes('claude-bridge.py'));
+      });
+      if (!alreadyInstalled) {
+        hooks[hookType] = [...existing, hookDef];
+      }
+    }
+
+    settings.hooks = hooks;
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
+    log('SlackBridge', 'Hooks installed in ~/.claude/settings.json');
+    return { ok: true };
+  } catch (e) {
+    const msg = (e as Error).message;
+    warn('SlackBridge', `Failed to install hooks: ${msg}`);
+    return { ok: false, error: msg };
+  }
 }
 
 /** Push events to renderer process */

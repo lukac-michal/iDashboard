@@ -109,6 +109,10 @@ export class CursorConnector extends BaseConnector {
 
   override async executeAction(actionId: string, _params?: unknown): Promise<void> {
     if (actionId === 'focus') {
+      if (process.platform !== 'darwin') {
+        log('Cursor', 'Editor focus is not available on this platform');
+        return;
+      }
       const editorApp = (this.config.settings.editorApp as string) ?? 'Cursor';
       log('Cursor', `Activating ${editorApp}`);
       execFile('osascript', ['-e', `tell application "${editorApp}" to activate`], (err) => {

@@ -83,6 +83,9 @@ interface DashboardState {
   // Global event counter (monotonically increasing)
   eventCounter: number;
 
+  // Active connector tab (null = "All" view)
+  activeConnectorTab: string | null;
+
   // Actions
   pushEvent: (event: ConnectorEvent) => void;
   dismissEvent: (eventId: string) => void;
@@ -110,6 +113,7 @@ interface DashboardState {
   addSlackMessage: (message: SlackChatMessage) => void;
   updateSlackMessage: (id: string, update: Partial<SlackChatMessage>) => void;
   setSelectedSlackChannel: (channel: string | null) => void;
+  setActiveConnectorTab: (tab: string | null) => void;
 }
 
 export const useDashboardStore = create<DashboardState>((set, get) => ({
@@ -141,6 +145,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   selectedSlackChannel: null,
   acknowledgedEvents: new Set(),
   eventCounter: 0,
+  activeConnectorTab: null,
 
   pushEvent: (event) => {
     set((state) => {
@@ -239,4 +244,5 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     ),
   })),
   setSelectedSlackChannel: (selectedSlackChannel) => set({ selectedSlackChannel }),
+  setActiveConnectorTab: (activeConnectorTab) => set({ activeConnectorTab }),
 }));

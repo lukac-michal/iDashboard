@@ -99,6 +99,9 @@ export const IPC = {
   SLACK_SEND: 'slack:send',
   SLACK_CHANNELS: 'slack:channels',
 
+  // Slack Bridge
+  SLACK_BRIDGE_INSTALL_HOOKS: 'slack-bridge:install-hooks',
+
   // App lifecycle
   APP_READY: 'app:ready',
   APP_FOCUS_TERMINAL: 'app:focus-terminal',

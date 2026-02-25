@@ -182,6 +182,7 @@ function GeneralSettings() {
 
 function ConnectorsSettings() {
   const connectors = useDashboardStore(s => s.connectors);
+  const setConnectors = useDashboardStore(s => s.setConnectors);
   const [editing, setEditing] = useState<ConnectorConfig | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [newAppName, setNewAppName] = useState('');
@@ -212,17 +213,27 @@ function ConnectorsSettings() {
 
   const handleSave = async () => {
     if (!editing) return;
+    let statuses;
     if (showAdd) {
-      await window.iDashboard?.addConnector(editing);
+      statuses = await window.iDashboard?.addConnector(editing);
     } else {
-      await window.iDashboard?.updateConnector(editing);
+      statuses = await window.iDashboard?.updateConnector(editing);
     }
+    if (Array.isArray(statuses)) setConnectors(statuses);
     setEditing(null);
     setShowAdd(false);
   };
 
   const handleRemove = async (id: string) => {
-    await window.iDashboard?.removeConnector(id);
+    const statuses = await window.iDashboard?.removeConnector(id);
+    if (Array.isArray(statuses)) setConnectors(statuses);
+  };
+
+  const handleToggleEnabled = async (id: string, currentlyEnabled: boolean) => {
+    const config = await window.iDashboard?.getConnectorConfig(id) as ConnectorConfig | null;
+    if (!config) return;
+    const statuses = await window.iDashboard?.updateConnector({ ...config, enabled: !currentlyEnabled });
+    if (Array.isArray(statuses)) setConnectors(statuses);
   };
 
   // Terminal Apps helpers (for claude-code connector)
@@ -530,15 +541,24 @@ function ConnectorsSettings() {
       ) : (
         <div className="space-y-2">
           {connectors.map(c => (
-            <div key={c.id} className="flex items-center gap-3 bg-gray-900/50 rounded-lg p-3 border border-gray-800/30">
+            <div key={c.id} className={`flex items-center gap-3 bg-gray-900/50 rounded-lg p-3 border border-gray-800/30${c.enabled === false ? ' opacity-50' : ''}`}>
               <div
                 className="w-3 h-3 rounded-full flex-shrink-0"
-                style={{ backgroundColor: c.connected ? '#22c55e' : '#6b7280' }}
+                style={{ backgroundColor: c.enabled === false ? '#6b7280' : c.connected ? '#22c55e' : '#ef4444' }}
               />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-gray-200 truncate">{c.displayName}</div>
-                <div className="text-[10px] text-gray-500">{c.type} · {c.id}</div>
+                <div className="text-[10px] text-gray-500">
+                  {c.type} · {c.id}{c.enabled === false ? ' · off' : ''}
+                </div>
               </div>
+              <button
+                onClick={() => handleToggleEnabled(c.id, c.enabled !== false)}
+                className={`relative w-8 h-4 rounded-full transition-colors duration-200 flex-shrink-0 ${c.enabled !== false ? 'bg-green-600' : 'bg-gray-600'}`}
+                title={c.enabled !== false ? 'Disable connector' : 'Enable connector'}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-all duration-200 ${c.enabled !== false ? 'translate-x-4' : 'translate-x-0'}`} />
+              </button>
               <button
                 onClick={() => handleEdit(c.id)}
                 className="text-xs text-indigo-400 hover:text-indigo-300 px-2 py-1"
@@ -1079,7 +1099,205 @@ function ExperimentalSettings() {
           className="settings-input w-24"
         />
       </SettingRow>
+
+      <SlackBridgeSettings />
     </div>
+  );
+}
+
+// --- Slack Bridge Settings ---
+
+function SlackBridgeSettings() {
+  const config = useDashboardStore(s => s.config);
+  if (!config) return null;
+
+  const bridge = config.slackBridge ?? {
+    enabled: false,
+    targetChannel: '',
+    forwardStop: true,
+    forwardSubagentStop: true,
+    forwardTaskComplete: true,
+    forwardToolUse: false,
+    forwardNeedsInput: true,
+    forwardUserPrompt: true,
+    threadingMode: 'continuous' as const,
+    maxThreadMessages: 50,
+    reverseEnabled: false,
+    maxMessageLength: 3000,
+  };
+
+  const updateBridge = (partial: Partial<AppConfig['slackBridge']>) => {
+    window.iDashboard?.updateConfig({ slackBridge: { ...bridge, ...partial } });
+  };
+
+  const [hookStatus, setHookStatus] = useState<'unknown' | 'checking' | 'installed' | 'not-installed'>('unknown');
+
+  const installHooks = async () => {
+    setHookStatus('checking');
+    try {
+      const result = await window.iDashboard?.installSlackBridgeHooks?.();
+      setHookStatus(result?.ok ? 'installed' : 'not-installed');
+    } catch {
+      setHookStatus('not-installed');
+    }
+  };
+
+  return (
+    <>
+      <SectionTitle>Slack Bridge</SectionTitle>
+      <div className="pl-0 -mt-1 mb-2">
+        <span className="text-[10px] text-gray-500">
+          Forwards Claude Code output (final answers, tool results) to a Slack channel automatically.
+        </span>
+      </div>
+      <SettingRow label="Enable Bridge">
+        <ToggleSwitch
+          checked={bridge.enabled}
+          onChange={v => updateBridge({ enabled: v })}
+        />
+      </SettingRow>
+      <SettingRow label="Target Channel">
+        <input
+          value={bridge.targetChannel}
+          onChange={e => updateBridge({ targetChannel: e.target.value })}
+          className="settings-input flex-1"
+          placeholder="#claude-output or channel ID"
+        />
+      </SettingRow>
+
+      <SectionTitle>Event Forwarding</SectionTitle>
+      <SettingRow label="Stop Messages">
+        <ToggleSwitch
+          checked={bridge.forwardStop ?? true}
+          onChange={v => updateBridge({ forwardStop: v })}
+        />
+      </SettingRow>
+      <div className="pl-40 -mt-1 mb-1">
+        <span className="text-[10px] text-gray-500">Claude's final answers</span>
+      </div>
+      <SettingRow label="Subagent Stop">
+        <ToggleSwitch
+          checked={bridge.forwardSubagentStop ?? true}
+          onChange={v => updateBridge({ forwardSubagentStop: v })}
+        />
+      </SettingRow>
+      <div className="pl-40 -mt-1 mb-1">
+        <span className="text-[10px] text-gray-500">Subagent completions</span>
+      </div>
+      <SettingRow label="Task Complete">
+        <ToggleSwitch
+          checked={bridge.forwardTaskComplete ?? true}
+          onChange={v => updateBridge({ forwardTaskComplete: v })}
+        />
+      </SettingRow>
+      <div className="pl-40 -mt-1 mb-1">
+        <span className="text-[10px] text-gray-500">Task completion events</span>
+      </div>
+      <SettingRow label="Tool Use">
+        <ToggleSwitch
+          checked={bridge.forwardToolUse}
+          onChange={v => updateBridge({ forwardToolUse: v })}
+        />
+      </SettingRow>
+      <div className="pl-40 -mt-1 mb-1">
+        <span className="text-[10px] text-gray-500">Tool results (noisy)</span>
+      </div>
+      <SettingRow label="Needs Input">
+        <ToggleSwitch
+          checked={bridge.forwardNeedsInput ?? true}
+          onChange={v => updateBridge({ forwardNeedsInput: v })}
+        />
+      </SettingRow>
+      <div className="pl-40 -mt-1 mb-1">
+        <span className="text-[10px] text-gray-500">When Claude waits for input</span>
+      </div>
+      <SettingRow label="User Prompts">
+        <ToggleSwitch
+          checked={bridge.forwardUserPrompt ?? true}
+          onChange={v => updateBridge({ forwardUserPrompt: v })}
+        />
+      </SettingRow>
+      <div className="pl-40 -mt-1 mb-1">
+        <span className="text-[10px] text-gray-500">Your prompts to Claude</span>
+      </div>
+
+      <SectionTitle>Threading</SectionTitle>
+      <SettingRow label="Threading Mode">
+        <select
+          value={bridge.threadingMode ?? 'continuous'}
+          onChange={e => updateBridge({ threadingMode: e.target.value as 'continuous' | 'per-interaction' })}
+          className="settings-select"
+        >
+          <option value="continuous">Continuous</option>
+          <option value="per-interaction">Per Interaction</option>
+        </select>
+      </SettingRow>
+      <div className="pl-40 -mt-1 mb-1">
+        <span className="text-[10px] text-gray-500">
+          Per Interaction starts a new Slack thread each time you send a prompt.
+        </span>
+      </div>
+      <SettingRow label="Max Thread Messages">
+        <input
+          type="number"
+          value={bridge.maxThreadMessages ?? 50}
+          onChange={e => updateBridge({ maxThreadMessages: parseInt(e.target.value) || 50 })}
+          className="settings-input w-20"
+        />
+      </SettingRow>
+      <div className="pl-40 -mt-1 mb-1">
+        <span className="text-[10px] text-gray-500">
+          Start a new thread after this many messages (prevents very long threads).
+        </span>
+      </div>
+
+      <SectionTitle>Reverse Bridge</SectionTitle>
+      <SettingRow label="Reverse Bridge">
+        <ToggleSwitch
+          checked={bridge.reverseEnabled}
+          onChange={v => updateBridge({ reverseEnabled: v })}
+        />
+      </SettingRow>
+      <div className="pl-40 -mt-1 mb-1">
+        <span className="text-[10px] text-gray-500">
+          Slack thread replies get typed into the Claude Code terminal (bidirectional).
+          Requires the bridge channel to be in the Slack connector's monitored channels.
+        </span>
+      </div>
+      <SettingRow label="Max Message Length">
+        <input
+          type="number"
+          value={bridge.maxMessageLength}
+          onChange={e => updateBridge({ maxMessageLength: parseInt(e.target.value) || 3000 })}
+          className="settings-input w-20"
+        />
+      </SettingRow>
+
+      <div className="mt-3 p-3 bg-gray-800/50 rounded-lg border border-gray-700/30">
+        <div className="text-xs text-gray-300 font-medium mb-2">Claude Code Hooks</div>
+        <div className="text-[10px] text-gray-500 mb-2">
+          The bridge requires hooks in Claude Code's settings to capture output.
+          Click below to auto-install them into ~/.claude/settings.json.
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={installHooks}
+            className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-500"
+          >
+            Install Hooks
+          </button>
+          {hookStatus === 'installed' && (
+            <span className="text-[10px] text-green-400">Hooks installed</span>
+          )}
+          {hookStatus === 'not-installed' && (
+            <span className="text-[10px] text-red-400">Failed — check ~/.claude/settings.json manually</span>
+          )}
+          {hookStatus === 'checking' && (
+            <span className="text-[10px] text-gray-400">Installing...</span>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
 

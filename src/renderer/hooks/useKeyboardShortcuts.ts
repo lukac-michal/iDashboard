@@ -39,8 +39,10 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Escape → Back to dashboard
+      // Escape → exit fullscreen/maximized first, then navigate to dashboard
       if (e.key === 'Escape') {
+        // Always try to exit fullscreen/maximized state
+        window.iDashboard?.setWindowMode('floating');
         const currentPanel = useDashboardStore.getState().activePanel;
         if (currentPanel !== 'dashboard') {
           setActivePanel('dashboard');

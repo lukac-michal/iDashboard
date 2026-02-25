@@ -30,9 +30,11 @@ export function EventCard({ event, containerWidth, isLatest, onDismiss, onAction
   const timeAgo = formatTimeAgo(event.timestamp);
 
   const hasFocusAction = event.uiHints?.actionButtons?.some(a => a.id === 'focus');
-  const rawSessionId = (event.metadata as Record<string, string>)?.sessionId;
+  const meta = event.metadata as Record<string, string> | undefined;
+  const rawSessionId = meta?.sessionId;
   const sessionName = (rawSessionId && rawSessionId !== 'unknown' ? rawSessionId : null)
     ?? event.body?.match(/Session:\s*(.+)/)?.[1];
+  const itermSessionId = meta?.itermSessionId;
 
   const isSlackEvent = event.eventType === 'message-received'
     || event.eventType === 'mention-received'
@@ -48,7 +50,7 @@ export function EventCard({ event, containerWidth, isLatest, onDismiss, onAction
       if (channel) setSelectedSlackChannel(channel.replace(/^#/, ''));
       setActivePanel('slack');
     } else if (hasFocusAction) {
-      onAction(event.connectorId, 'focus', { sessionName });
+      onAction(event.connectorId, 'focus', { sessionName, itermSessionId });
     }
   };
 
@@ -106,7 +108,7 @@ export function EventCard({ event, containerWidth, isLatest, onDismiss, onAction
                           onDismiss(event.id);
                         } else {
                           onAction(event.connectorId, action.id,
-                            action.id === 'focus' ? { sessionName } : undefined);
+                            action.id === 'focus' ? { sessionName, itermSessionId } : undefined);
                         }
                       }}
                     />

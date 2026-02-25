@@ -57,7 +57,20 @@ export class ConfigLoader {
       const parsed = yaml.load(raw) as Record<string, unknown>;
       const substituted = deepSubstitute(parsed);
       const validated = appConfigSchema.parse(substituted);
-      return validated as AppConfig;
+      const config = validated as AppConfig;
+
+      // Backward-compat: migrate legacy forwardStopMessages → per-event toggles
+      const rawBridge = (substituted as Record<string, unknown>)?.slackBridge as Record<string, unknown> | undefined;
+      if (rawBridge && typeof rawBridge.forwardStopMessages === 'boolean') {
+        const legacy = rawBridge.forwardStopMessages as boolean;
+        // Only migrate if the new fields weren't explicitly set in the YAML
+        if (rawBridge.forwardStop === undefined) config.slackBridge.forwardStop = legacy;
+        if (rawBridge.forwardSubagentStop === undefined) config.slackBridge.forwardSubagentStop = legacy;
+        if (rawBridge.forwardTaskComplete === undefined) config.slackBridge.forwardTaskComplete = legacy;
+        delete config.slackBridge.forwardStopMessages;
+      }
+
+      return config;
     } catch (err) {
       console.error(`[Config] Failed to load ${configPath}:`, err);
       return DEFAULT_CONFIG;
@@ -110,6 +123,17 @@ export class ConfigLoader {
         fs.unlinkSync(path.join(connectorsDir, file));
       }
     }
+  }
+
+  /** Save app config to config.yaml (note: YAML comments will not be preserved) */
+  saveAppConfig(config: AppConfig): void {
+    const configPath = path.join(this.configDir, 'config.yaml');
+    const yamlStr = yaml.dump(config as Record<string, unknown>, {
+      lineWidth: 120,
+      noRefs: true,
+      sortKeys: false,
+    });
+    fs.writeFileSync(configPath, yamlStr, 'utf-8');
   }
 
   ensureConfigDir(): void {

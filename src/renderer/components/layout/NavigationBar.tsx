@@ -2,7 +2,7 @@
 // NavigationBar - Bottom tab bar for switching between panels
 // ============================================================
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useDashboardStore, type ViewPanel } from '@renderer/store/dashboard';
 
 const historyTab: { id: ViewPanel; label: string; icon: string } = {
@@ -36,7 +36,7 @@ export function NavigationBar() {
   const debugEnabled = useDashboardStore(s => s.config?.debug?.enabled ?? false);
   const experimentalEnabled = useDashboardStore(s => s.config?.experimental?.enabled ?? false);
   const connectors = useDashboardStore(s => s.connectors);
-  const hasSlack = connectors.some(c => c.type === 'slack');
+  const hasSlack = connectors.some(c => c.type === 'slack' && c.enabled !== false);
 
   const tabs = useMemo(() => {
     const secondTab = experimentalEnabled ? orchestratorTab : historyTab;
@@ -47,6 +47,13 @@ export function NavigationBar() {
       : base;
     return debugEnabled ? [...withSlack, logsTab] : withSlack;
   }, [debugEnabled, experimentalEnabled, hasSlack]);
+
+  // Redirect to dashboard if the active panel's tab was removed (e.g. Slack disabled)
+  useEffect(() => {
+    if (!tabs.some(t => t.id === activePanel)) {
+      setActivePanel('dashboard');
+    }
+  }, [tabs, activePanel, setActivePanel]);
 
   return (
     <nav className="flex items-center border-t border-gray-800/50 bg-gray-900/60">

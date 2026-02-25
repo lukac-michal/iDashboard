@@ -94,6 +94,9 @@ const api = {
     ipcRenderer.invoke(IPC.SLACK_SEND, { channel, text, threadTs }),
   slackGetChannels: () => ipcRenderer.invoke(IPC.SLACK_CHANNELS),
 
+  // Slack Bridge hook installation
+  installSlackBridgeHooks: () => ipcRenderer.invoke(IPC.SLACK_BRIDGE_INSTALL_HOOKS),
+
   // Subscriptions (main → renderer push)
   onEvent: (callback: (event: unknown) => void) => {
     const handler = (_: unknown, data: unknown) => callback(data);

@@ -30,6 +30,7 @@ export class WindowManager {
       y: position.y ?? undefined,
       frame: !frameless,
       transparent: frameless,
+      fullscreenable: !frameless,
       opacity,
       alwaysOnTop: this.config.alwaysOnTop.permanent,
       skipTaskbar: false,
@@ -122,11 +123,10 @@ export class WindowManager {
       return;
     }
 
-    // Show and bring to front
+    // Show on top without stealing focus from the current app
     log('Window', `surfaceForNotification: showing window (visible=${this.window.isVisible()}, minimized=${this.window.isMinimized()})`);
-    this.window.show();
+    this.window.showInactive();
     this.window.setAlwaysOnTop(true, 'floating');
-    this.window.focus();
 
     // Set timer to revert
     if (this.alwaysOnTopTimer) clearTimeout(this.alwaysOnTopTimer);

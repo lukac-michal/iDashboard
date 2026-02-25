@@ -12,10 +12,12 @@ import { log, error as logError } from '../utils/log';
 import { registerConnectorRoutes } from './routes/connectors';
 import { registerWebhookRoutes } from './routes/webhooks';
 import { registerHealthRoutes } from './routes/health';
+import { registerSlackDebugRoutes } from './routes/slack-debug';
 import { registerWebSocket } from './websocket';
 import type { ConnectorEngine } from '@main/connectors/engine';
 import type { EventStore } from '@main/db/event-store';
 import type { Aggregator } from '@main/db/aggregator';
+import type { SlackBridgeService } from '@main/services/slack-bridge';
 
 export interface APIContext {
   engine: ConnectorEngine;
@@ -23,6 +25,7 @@ export interface APIContext {
   aggregator: Aggregator;
   config: AppConfig;
   broadcastEvent: (event: unknown) => void;
+  slackBridge?: SlackBridgeService | null;
 }
 
 export async function createAPIServer(ctx: APIContext): Promise<FastifyInstance> {
@@ -66,6 +69,7 @@ export async function createAPIServer(ctx: APIContext): Promise<FastifyInstance>
   registerConnectorRoutes(server, ctx);
   registerWebhookRoutes(server, ctx);
   registerHealthRoutes(server, ctx);
+  registerSlackDebugRoutes(server, ctx);
   registerWebSocket(server, ctx);
 
   return server;

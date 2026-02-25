@@ -33,6 +33,7 @@ export abstract class BaseConnector {
       id: config.id,
       type: config.type,
       displayName: config.displayName,
+      enabled: true,
       connected: false,
       eventCount: 0,
     };

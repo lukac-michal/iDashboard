@@ -170,6 +170,21 @@ export const appConfigSchema = z.object({
     agentProfilesDir: z.string().default(''),
     healthCheckIntervalMs: z.number().int().min(1000).default(10000),
   }).default({}),
+  slackBridge: z.object({
+    enabled: z.boolean().default(false),
+    targetChannel: z.string().default(''),
+    forwardStop: z.boolean().default(true),
+    forwardSubagentStop: z.boolean().default(true),
+    forwardTaskComplete: z.boolean().default(true),
+    forwardToolUse: z.boolean().default(false),
+    forwardNeedsInput: z.boolean().default(true),
+    forwardUserPrompt: z.boolean().default(true),
+    forwardStopMessages: z.boolean().optional(),
+    threadingMode: z.enum(['continuous', 'per-interaction']).default('continuous'),
+    maxThreadMessages: z.number().int().min(1).max(1000).default(50),
+    reverseEnabled: z.boolean().default(false),
+    maxMessageLength: z.number().int().min(100).max(10000).default(3000),
+  }).default({}),
 });
 
 export type ValidatedAppConfig = z.infer<typeof appConfigSchema>;

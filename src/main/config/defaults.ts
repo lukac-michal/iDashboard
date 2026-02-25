@@ -108,4 +108,18 @@ export const DEFAULT_CONFIG: AppConfig = {
     agentProfilesDir: '',
     healthCheckIntervalMs: 10000,
   },
+  slackBridge: {
+    enabled: false,
+    targetChannel: '',
+    forwardStop: true,
+    forwardSubagentStop: true,
+    forwardTaskComplete: true,
+    forwardToolUse: false,
+    forwardNeedsInput: true,
+    forwardUserPrompt: true,
+    threadingMode: 'continuous',
+    maxThreadMessages: 50,
+    reverseEnabled: false,
+    maxMessageLength: 3000,
+  },
 };

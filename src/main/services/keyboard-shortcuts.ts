@@ -16,7 +16,8 @@ export class KeyboardShortcutService {
   getDefaults(): KeyboardShortcut[] {
     return [
       { id: 'toggle-visibility', keys: 'CommandOrControl+Shift+D', action: 'toggle-visibility', description: 'Show/hide dashboard', scope: 'global' },
-      { id: 'toggle-fullscreen', keys: 'CommandOrControl+Shift+F', action: 'toggle-fullscreen', description: 'Toggle fullscreen mode', scope: 'global' },
+      { id: 'toggle-fullscreen', keys: 'CommandOrControl+Shift+F', action: 'toggle-fullscreen', description: 'Toggle maximized mode', scope: 'global' },
+      { id: 'escape-fullscreen', keys: 'Escape', action: 'escape-fullscreen', description: 'Exit fullscreen/maximized', scope: 'app' },
       { id: 'dismiss-all', keys: 'CommandOrControl+Shift+X', action: 'dismiss-all', description: 'Dismiss all events', scope: 'app' },
       { id: 'open-settings', keys: 'CommandOrControl+,', action: 'open-settings', description: 'Open settings', scope: 'app' },
       { id: 'focus-search', keys: 'CommandOrControl+K', action: 'focus-search', description: 'Focus search/filter', scope: 'app' },

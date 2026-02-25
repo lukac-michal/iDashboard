@@ -116,14 +116,15 @@ export function TrendChartsPanel() {
     return result;
   }, [filtered, days]);
 
-  // Group by connector for breakdown
+  // Group by connector for breakdown (from ALL aggregates so deselected ones stay visible)
   const byConnector = useMemo(() => {
     const map = new Map<string, number>();
-    for (const agg of filtered) {
+    for (const agg of aggregates) {
+      if (!allTypesSelected && !selectedTypes.has(agg.eventType)) continue;
       map.set(agg.connectorId, (map.get(agg.connectorId) ?? 0) + agg.totalCount);
     }
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
-  }, [filtered]);
+  }, [aggregates, selectedTypes, allTypesSelected]);
 
   // Group by event type for breakdown
   const byType = useMemo(() => {
@@ -407,33 +408,47 @@ export function TrendChartsPanel() {
 
         {/* Breakdowns side by side */}
         <div className="grid grid-cols-2 gap-3">
-          {/* Connector breakdown */}
-          {byConnector.length > 0 && (
-            <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-800/30">
-              <h3 className="text-xs font-medium text-gray-400 mb-3">By Connector</h3>
-              <div className="space-y-2">
-                {byConnector.map(([id, count]) => {
-                  const connector = connectors.find(c => c.id === id);
-                  const pct = totalEvents > 0 ? (count / totalEvents) * 100 : 0;
+          {/* Connector breakdown (clickable to toggle) */}
+          {byConnector.length > 0 && (() => {
+            const connectorTotal = byConnector.reduce((s, [, c]) => s + c, 0);
+            return (
+              <div className="bg-gray-900/50 rounded-lg p-4 border border-gray-800/30">
+                <h3 className="text-xs font-medium text-gray-400 mb-3">By Connector</h3>
+                <div className="space-y-1">
+                  {byConnector.map(([id, count]) => {
+                    const connector = connectors.find(c => c.id === id);
+                    const pct = connectorTotal > 0 ? (count / connectorTotal) * 100 : 0;
+                    const isActive = allConnectorsSelected || selectedConnectors.has(id);
 
-                  return (
-                    <div key={id} className="flex items-center gap-2">
-                      <span className="text-[11px] text-gray-300 truncate w-20">
-                        {connector?.displayName ?? id}
-                      </span>
-                      <div className="flex-1 h-2.5 bg-gray-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-indigo-500 rounded-full transition-all"
-                          style={{ width: `${pct}%` }}
-                        />
+                    return (
+                      <div
+                        key={id}
+                        className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer transition-colors ${
+                          isActive
+                            ? 'hover:bg-gray-800/50'
+                            : 'opacity-40 hover:opacity-60'
+                        }`}
+                        onClick={() => toggleConnector(id)}
+                      >
+                        <span className={`text-[11px] truncate w-20 ${isActive ? 'text-gray-300' : 'text-gray-500'}`}>
+                          {connector?.displayName ?? id}
+                        </span>
+                        <div className="flex-1 h-2.5 bg-gray-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{ width: `${pct}%`, backgroundColor: isActive ? '#6366f1' : '#4b5563' }}
+                          />
+                        </div>
+                        <span className={`text-[10px] w-14 text-right font-mono ${isActive ? 'text-gray-400' : 'text-gray-600'}`}>
+                          {count} ({Math.round(pct)}%)
+                        </span>
                       </div>
-                      <span className="text-[10px] text-gray-400 w-14 text-right font-mono">{count} ({Math.round(pct)}%)</span>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Event type breakdown */}
           {byType.length > 0 && (

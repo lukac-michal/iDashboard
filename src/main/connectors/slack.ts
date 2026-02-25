@@ -5,6 +5,7 @@
 import { BaseConnector } from './base';
 import { log, warn } from '@main/utils/log';
 import type { ConnectorCapability, ConnectorEvent, ConnectorAction } from '@shared/types';
+import type { SlackChannelLogger } from '@main/services/slack-channel-logger';
 
 interface SlackMessage {
   ts: string;
@@ -80,6 +81,7 @@ export class SlackConnector extends BaseConnector {
   private botUserId: string | null = null;
   private dmChannelId: string | null = null;        // legacy single-DM (self)
   private dmChannels = new Map<string, string>();    // DM channel ID → other user ID
+  private channelLogger: SlackChannelLogger | null = null;
 
   override async initialize(...args: Parameters<BaseConnector['initialize']>): Promise<void> {
     await super.initialize(...args);
@@ -122,6 +124,8 @@ export class SlackConnector extends BaseConnector {
         const isMention = this.isMention(msg.text);
         const userName = msg.user ? await this.resolveUserName(msg.user) : undefined;
         const resolvedText = await this.resolveTextMentions(msg.text);
+
+        this.channelLogger?.logReceived(channelName, userName ?? msg.user ?? '?', resolvedText, msg.ts, msg.thread_ts);
 
         events.push(this.createEvent({
           severity: isMention ? 'attention' : 'info',
@@ -220,9 +224,19 @@ export class SlackConnector extends BaseConnector {
   }
 
   /** Send a message to a Slack channel */
-  async sendMessage(channel: string, text: string, threadTs?: string): Promise<SlackPostResponse> {
-    const body: Record<string, string> = { channel, text };
+  async sendMessage(channel: string, text: string, threadTs?: string, attachmentColor?: string): Promise<SlackPostResponse> {
+    const body: Record<string, unknown> = { channel };
+
+    if (attachmentColor) {
+      // Use attachment with colored left sidebar
+      body.attachments = [{ text, color: attachmentColor, mrkdwn_in: ['text'] }];
+    } else {
+      body.text = text;
+    }
+
     if (threadTs) body.thread_ts = threadTs;
+
+    this.channelLogger?.logSent(channel, text, threadTs);
 
     const resp = await this.fetchWithAuth('https://slack.com/api/chat.postMessage', {
       method: 'POST',
@@ -231,10 +245,13 @@ export class SlackConnector extends BaseConnector {
     });
 
     if (!resp.ok) {
-      return { ok: false, error: `HTTP ${resp.status}` };
+      const error = `HTTP ${resp.status}`;
+      this.channelLogger?.logSendResult(channel, false, undefined, error);
+      return { ok: false, error };
     }
 
     const data = await resp.json() as SlackPostResponse;
+    this.channelLogger?.logSendResult(channel, data.ok, data.ts, data.error);
 
     // Track the sent message as an active thread so replies get polled
     if (data.ok && data.ts) {
@@ -265,6 +282,38 @@ export class SlackConnector extends BaseConnector {
   /** Get the bot's own user ID (null if not resolved) */
   getBotUserId(): string | null {
     return this.botUserId;
+  }
+
+  /** Attach a channel logger for detailed per-channel logging */
+  setChannelLogger(logger: SlackChannelLogger): void {
+    this.channelLogger = logger;
+  }
+
+  // ─── Debug getters ─────────────────────────────────────
+
+  /** Returns channel name → Slack channel ID map */
+  getChannelIds(): Record<string, string> {
+    return Object.fromEntries(this.channelIds);
+  }
+
+  /** Returns per-channel polling cursors (channel ID → last timestamp) */
+  getLastTimestamps(): Record<string, string> {
+    return Object.fromEntries(this.lastTimestamps);
+  }
+
+  /** Returns active thread tracking map ("channelId:threadTs" → last seen reply ts) */
+  getActiveThreads(): Record<string, string> {
+    return Object.fromEntries(this.activeThreads);
+  }
+
+  /** Returns the number of cached user names */
+  getUserNameCacheSize(): number {
+    return this.userNames.size;
+  }
+
+  /** Returns configured keyword filters */
+  getKeywordFilters(): string[] {
+    return [...this.keywordFilters];
   }
 
   /** Resolve configured channel names (e.g. "general") to Slack channel IDs (e.g. "C08...") */

@@ -29,6 +29,7 @@ interface ManagedConnector {
 
 export class ConnectorEngine {
   private connectors = new Map<string, ManagedConnector>();
+  private disabledConfigs = new Map<string, ConnectorConfig>();
   private eventCallbacks: EventCallback[] = [];
   private authManager: AuthManager;
 
@@ -47,8 +48,21 @@ export class ConnectorEngine {
     }
   }
 
-  /** Start a connector from config */
+  /** Start a connector from config (or park it if disabled) */
   async addConnector(config: ConnectorConfig): Promise<void> {
+    // Disabled connector: stop if running, store config for display
+    if (!config.enabled) {
+      if (this.connectors.has(config.id)) {
+        await this.removeConnector(config.id);
+      }
+      this.disabledConfigs.set(config.id, config);
+      log('Engine', ` Connector disabled: ${config.id} (${config.type})`);
+      return;
+    }
+
+    // Enabling: remove from disabled list
+    this.disabledConfigs.delete(config.id);
+
     if (this.connectors.has(config.id)) {
       await this.removeConnector(config.id);
     }
@@ -82,6 +96,8 @@ export class ConnectorEngine {
 
   /** Stop and remove a connector */
   async removeConnector(id: string): Promise<void> {
+    this.disabledConfigs.delete(id);
+
     const managed = this.connectors.get(id);
     if (!managed) return;
 
@@ -135,13 +151,25 @@ export class ConnectorEngine {
     }
   }
 
-  /** Get status for all connectors */
+  /** Get status for all connectors (including disabled) */
   getStatuses(): ConnectorStatus[] {
-    return [...this.connectors.values()].map(m => {
+    const active: ConnectorStatus[] = [...this.connectors.values()].map(m => {
       const status = m.connector.getStatus();
+      status.enabled = true;
       status.health = m.circuitBreaker.getHealth();
       return status;
     });
+
+    const disabled: ConnectorStatus[] = [...this.disabledConfigs.values()].map(c => ({
+      id: c.id,
+      type: c.type,
+      displayName: c.displayName,
+      enabled: false,
+      connected: false,
+      eventCount: 0,
+    }));
+
+    return [...active, ...disabled];
   }
 
   /** Get health for all connectors */
@@ -160,7 +188,7 @@ export class ConnectorEngine {
 
   /** Get the full config for a connector (for editing in Settings UI) */
   getConnectorConfig(id: string): ConnectorConfig | undefined {
-    return this.connectors.get(id)?.config;
+    return this.connectors.get(id)?.config ?? this.disabledConfigs.get(id);
   }
 
   /** Execute an action on a connector */
@@ -172,20 +200,17 @@ export class ConnectorEngine {
 
   /** Replace all connectors with new configs (for hot-reload) */
   async reloadConnectors(configs: ConnectorConfig[]): Promise<void> {
-    // Remove connectors that are no longer in config
+    // Remove connectors that are no longer in config at all
     const newIds = new Set(configs.map(c => c.id));
-    for (const id of this.connectors.keys()) {
-      if (!newIds.has(id)) {
-        await this.removeConnector(id);
-      }
+    for (const id of [...this.connectors.keys()]) {
+      if (!newIds.has(id)) await this.removeConnector(id);
+    }
+    for (const id of [...this.disabledConfigs.keys()]) {
+      if (!newIds.has(id)) this.disabledConfigs.delete(id);
     }
 
-    // Add/update connectors
+    // Add/update connectors (addConnector handles enabled/disabled)
     for (const config of configs) {
-      if (!config.enabled) {
-        await this.removeConnector(config.id);
-        continue;
-      }
       await this.addConnector(config);
     }
   }

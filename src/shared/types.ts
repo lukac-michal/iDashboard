@@ -111,6 +111,7 @@ export interface ConnectorStatus {
   id: string;
   type: string;
   displayName: string;
+  enabled: boolean;
   connected: boolean;
   lastPollAt?: number;
   lastError?: string;
@@ -287,6 +288,21 @@ export interface AppConfig {
     repoPath: string;
     agentProfilesDir: string;
     healthCheckIntervalMs: number;
+  };
+  slackBridge: {
+    enabled: boolean;
+    targetChannel: string;
+    forwardStop: boolean;
+    forwardSubagentStop: boolean;
+    forwardTaskComplete: boolean;
+    forwardToolUse: boolean;
+    forwardNeedsInput: boolean;
+    forwardUserPrompt: boolean;
+    forwardStopMessages?: boolean; // LEGACY — migration only
+    threadingMode: 'continuous' | 'per-interaction';
+    maxThreadMessages: number;
+    reverseEnabled: boolean;
+    maxMessageLength: number;
   };
 }
 

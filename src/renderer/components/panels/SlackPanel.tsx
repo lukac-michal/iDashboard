@@ -20,13 +20,17 @@ function ChannelSelector({
   onSelect,
   onRefresh,
   refreshing,
+  bridgeChannel,
 }: {
   channels: string[];
   selected: string | null;
   onSelect: (ch: string | null) => void;
   onRefresh: () => void;
   refreshing: boolean;
+  bridgeChannel: string | null;
 }) {
+  const isBridge = (ch: string) => bridgeChannel === ch;
+
   return (
     <div className="flex items-center gap-1.5 px-3 py-2 border-b border-gray-800/50">
       <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto">
@@ -42,21 +46,26 @@ function ChannelSelector({
         >
           All
         </button>
-        {channels.map(ch => (
-          <button
-            key={ch}
-            onClick={() => onSelect(ch)}
-            className={`
-              px-2.5 py-1 rounded-full text-xs whitespace-nowrap transition-colors
-              ${selected === ch
-                ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
-                : 'bg-gray-800/40 text-gray-400 border border-gray-700/40 hover:text-gray-300'
-              }
-            `}
-          >
-            #{ch}
-          </button>
-        ))}
+        {channels.map(ch => {
+          const bridge = isBridge(ch);
+          const active = selected === ch;
+          const cls = active
+            ? bridge
+              ? 'bg-orange-500/20 text-orange-300 border border-orange-500/40'
+              : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/40'
+            : bridge
+              ? 'bg-orange-900/30 text-orange-400 border border-orange-700/40 hover:text-orange-300'
+              : 'bg-gray-800/40 text-gray-400 border border-gray-700/40 hover:text-gray-300';
+          return (
+            <button
+              key={ch}
+              onClick={() => onSelect(ch)}
+              className={`px-2.5 py-1 rounded-full text-xs whitespace-nowrap transition-colors ${cls}`}
+            >
+              #{ch}
+            </button>
+          );
+        })}
       </div>
       <button
         onClick={onRefresh}
@@ -86,11 +95,13 @@ function MessageBubble({
   parentPreview,
   onClick,
   onRetry,
+  isBridgeChannel,
 }: {
   message: SlackChatMessage;
   parentPreview: string | null;
   onClick: () => void;
   onRetry: () => void;
+  isBridgeChannel: boolean;
 }) {
   const isSent = message.direction === 'sent';
   const isFailed = message.status === 'failed';
@@ -99,9 +110,15 @@ function MessageBubble({
 
   const borderColor = isFailed
     ? 'border-red-500/60'
-    : isSent
-      ? 'border-indigo-500/50'
-      : 'border-[#611f69]/60';
+    : isBridgeChannel
+      ? 'border-orange-500/50'
+      : isSent
+        ? 'border-indigo-500/50'
+        : 'border-[#611f69]/60';
+
+  const bgColor = isBridgeChannel
+    ? 'bg-orange-950/30 hover:bg-orange-950/50'
+    : 'bg-gray-800/40 hover:bg-gray-800/60';
 
   const borderSide = isSent ? 'border-r-2' : 'border-l-2';
 
@@ -111,7 +128,7 @@ function MessageBubble({
         onClick={onClick}
         className={`
           max-w-[80%] rounded-lg px-3 py-2 text-left transition-colors
-          bg-gray-800/40 hover:bg-gray-800/60
+          ${bgColor}
           ${borderSide} ${borderColor}
           ${isSending ? 'opacity-50' : ''}
         `}
@@ -320,9 +337,13 @@ export function SlackPanel() {
   const setSelectedChannel = useDashboardStore(s => s.setSelectedSlackChannel);
   const addSlackMessage = useDashboardStore(s => s.addSlackMessage);
   const updateSlackMessage = useDashboardStore(s => s.updateSlackMessage);
+  const config = useDashboardStore(s => s.config);
 
   const setSlackChannels = useDashboardStore(s => s.setSlackChannels);
   const setEvents = useDashboardStore(s => s.setEvents);
+
+  // Normalize bridge target channel for comparison (strip leading #)
+  const bridgeChannel = config?.slackBridge?.targetChannel?.replace(/^#/, '') || null;
 
   const [detailMessage, setDetailMessage] = useState<SlackChatMessage | null>(null);
   const [threadTs, setThreadTs] = useState<string | null>(null);
@@ -460,6 +481,7 @@ export function SlackPanel() {
         onSelect={setSelectedChannel}
         onRefresh={handleRefresh}
         refreshing={refreshing}
+        bridgeChannel={bridgeChannel}
       />
 
       <div
@@ -480,6 +502,7 @@ export function SlackPanel() {
               parentPreview={findParentPreview(msg, filteredMessages)}
               onClick={() => setDetailMessage(msg)}
               onRetry={() => handleRetry(msg)}
+              isBridgeChannel={bridgeChannel !== null && msg.channel.replace(/^#/, '') === bridgeChannel}
             />
           ))
         )}

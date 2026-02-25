@@ -44,6 +44,11 @@ export class ClaudeCodeConnector extends BaseConnector {
       (this.config.settings.blinkDurationMs as number | undefined) ??
       DEFAULT_BLINK_DURATION;
 
+    // Merge bridge metadata (itermSessionId, etc.) into every event
+    const baseMeta = { ...req.metadata, sessionId, eventType };
+
+    const focusButton = { id: 'focus', label: 'Focus Terminal', icon: 'external-link', variant: 'primary' as const };
+
     switch (eventType) {
       case 'needs-input':
         return this.createEvent({
@@ -52,14 +57,12 @@ export class ClaudeCodeConnector extends BaseConnector {
           body: message || 'Waiting for your input',
           category: 'notification',
           eventType: 'needs-input',
-          metadata: { sessionId, eventType },
+          metadata: baseMeta,
           uiHints: {
             icon: 'terminal',
             color: '#f97316',
             blinkDurationMs: blinkDuration,
-            actionButtons: [
-              { id: 'focus', label: 'Focus Terminal', icon: 'external-link', variant: 'primary' },
-            ],
+            actionButtons: [focusButton],
           },
         });
 
@@ -70,14 +73,64 @@ export class ClaudeCodeConnector extends BaseConnector {
           body: 'Task completed',
           category: 'notification',
           eventType: 'task-complete',
-          metadata: { sessionId, eventType },
+          metadata: baseMeta,
           uiHints: {
             icon: 'check-circle',
             color: '#22c55e',
             blinkDurationMs: blinkDuration,
-            actionButtons: [
-              { id: 'focus', label: 'Focus Terminal', icon: 'external-link', variant: 'primary' },
-            ],
+            actionButtons: [focusButton],
+          },
+        });
+
+      case 'output-stop':
+      case 'output-subagent-stop':
+        return this.createEvent({
+          severity: 'info',
+          title: req.title ?? `Claude Code: ${sessionId}`,
+          body: message,
+          category: 'bridge-output',
+          eventType,
+          dismissed: true,
+          metadata: { ...baseMeta, hookType: (req.metadata?.hookType as string) ?? eventType },
+          uiHints: {
+            icon: 'terminal',
+            color: '#3b82f6',
+            blinkDurationMs: blinkDuration,
+            actionButtons: [focusButton],
+          },
+        });
+
+      case 'output-tool-use':
+        return this.createEvent({
+          severity: 'info',
+          title: req.title ?? `Claude Code: ${sessionId}`,
+          body: message,
+          category: 'bridge-output',
+          eventType: 'output-tool-use',
+          dismissed: true,
+          metadata: { ...baseMeta, hookType: 'tool-use', toolName: (req.metadata?.toolName as string) ?? 'unknown' },
+          uiHints: {
+            icon: 'wrench',
+            color: '#8b5cf6',
+            blinkDurationMs: blinkDuration,
+            actionButtons: [focusButton],
+          },
+        });
+
+      case 'user-prompt':
+        return this.createEvent({
+          severity: 'info',
+          title: `Claude Code: ${sessionId}`,
+          body: message,
+          category: 'bridge-output',
+          eventType: 'user-prompt',
+          dismissed: true,
+          metadata: baseMeta,
+          uiHints: {
+            icon: 'user',
+            color: '#06b6d4',
+            blinkDurationMs: blinkDuration,
+            actionButtons: [focusButton],
           },
         });
 
@@ -90,7 +143,7 @@ export class ClaudeCodeConnector extends BaseConnector {
           body: message,
           category: 'agent-message',
           eventType: 'agent-message',
-          metadata: { sessionId, eventType, from, to },
+          metadata: { ...baseMeta, from, to },
           uiHints: {
             icon: 'message-square',
             color: '#a855f7',
@@ -111,14 +164,12 @@ export class ClaudeCodeConnector extends BaseConnector {
           body: message,
           category: 'notification',
           eventType,
-          metadata: { sessionId, eventType },
+          metadata: baseMeta,
           uiHints: req.uiHints ?? {
             icon: 'terminal',
             color: '#f97316',
             blinkDurationMs: blinkDuration,
-            actionButtons: [
-              { id: 'focus', label: 'Focus Terminal', icon: 'external-link', variant: 'primary' as const },
-            ],
+            actionButtons: [focusButton],
           },
         });
       }
@@ -134,7 +185,13 @@ export class ClaudeCodeConnector extends BaseConnector {
 
   override async executeAction(actionId: string, params?: unknown): Promise<void> {
     if (actionId === 'focus') {
-      const sessionName = (params as { sessionName?: string })?.sessionName;
+      if (process.platform !== 'darwin') {
+        log('ClaudeCode', 'Terminal focus is not available on this platform');
+        return;
+      }
+      const p = params as { sessionName?: string; itermSessionId?: string } | undefined;
+      const sessionName = p?.sessionName;
+      const itermSessionId = p?.itermSessionId;
 
       // Build terminal apps list from config with backward compatibility
       const terminalApps: string[] =
@@ -146,7 +203,7 @@ export class ClaudeCodeConnector extends BaseConnector {
           : ['iTerm2', 'Terminal']);
 
       for (const app of terminalApps) {
-        const found = await this.tryFocusTerminal(app, sessionName);
+        const found = await this.tryFocusTerminal(app, sessionName, itermSessionId);
         if (found) return;
       }
 
@@ -159,21 +216,21 @@ export class ClaudeCodeConnector extends BaseConnector {
     }
   }
 
-  private async tryFocusTerminal(app: string, sessionName?: string): Promise<boolean> {
+  private async tryFocusTerminal(app: string, sessionName?: string, itermSessionId?: string): Promise<boolean> {
     // Check if app is running first
     const isRunning = await this.isAppRunning(app);
     if (!isRunning) return false;
 
-    if (!sessionName) {
+    if (!sessionName && !itermSessionId) {
       execFile('osascript', ['-e', `tell application "${app}" to activate`]);
       return true;
     }
 
     if (app === 'iTerm2' || app === 'iTerm') {
-      return this.focusITerm2(sessionName);
+      return this.focusITerm2(sessionName, itermSessionId);
     }
     if (app === 'Terminal') {
-      return this.focusTerminalApp(sessionName);
+      return this.focusTerminalApp(sessionName ?? '');
     }
 
     // Unknown app: just activate it (no session search)
@@ -191,33 +248,60 @@ export class ClaudeCodeConnector extends BaseConnector {
     });
   }
 
-  private focusITerm2(sessionName: string): Promise<boolean> {
+  private focusITerm2(sessionName?: string, itermSessionId?: string): Promise<boolean> {
     return new Promise((resolve) => {
-      log('ClaudeCode', `iTerm2 tab search: looking for "${sessionName}"`);
+      log('ClaudeCode', `iTerm2 tab search: name="${sessionName ?? ''}" itermId="${itermSessionId ?? ''}"`);
 
-      const escapedName = sessionName.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-      // Search by session name first, then fall back to matching the working
-      // directory path.  This handles renamed tabs — the hook sends
-      // $(basename $PWD) which will still appear inside the session's path.
+      // ITERM_SESSION_ID format is "w0t0p0:GUID" — we match on the GUID part
+      // via iTerm2's "unique id" property on each session.
+      const hasItermId = itermSessionId && itermSessionId.includes(':');
+      const itermGuid = hasItermId ? itermSessionId!.split(':').slice(1).join(':') : '';
+      const escapedGuid = itermGuid.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+      const escapedName = (sessionName ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
       const scriptContent = `
 tell application "iTerm2"
-  set targetName to "${escapedName}"
   set foundIt to false
-  -- Pass 1: match session name (fastest, covers default titles)
+${hasItermId ? `
+  -- Pass 0: exact match by iTerm2 unique session ID (most precise)
+  set targetId to "${escapedGuid}"
   repeat with w in windows
     repeat with t in tabs of w
       repeat with s in sessions of t
         if foundIt is false then
-          set sName to name of s
-          if sName contains targetName then
-            select t
-            tell w to select
-            set foundIt to true
-          end if
+          try
+            set sId to unique id of s
+            if sId contains targetId then
+              select t
+              tell w to select
+              set foundIt to true
+            end if
+          end try
         end if
       end repeat
     end repeat
   end repeat
+` : ''}
+${escapedName !== '' ? `
+  -- Pass 1: match session name (covers default titles)
+  set targetName to "${escapedName}"
+  if foundIt is false then
+    repeat with w in windows
+      repeat with t in tabs of w
+        repeat with s in sessions of t
+          if foundIt is false then
+            set sName to name of s
+            if sName contains targetName then
+              select t
+              tell w to select
+              set foundIt to true
+            end if
+          end if
+        end repeat
+      end repeat
+    end repeat
+  end if
   -- Pass 2: match working-directory path (covers renamed tabs)
   if foundIt is false then
     repeat with w in windows
@@ -237,6 +321,7 @@ tell application "iTerm2"
       end repeat
     end repeat
   end if
+` : ''}
   if foundIt then
     activate
     return "found"
