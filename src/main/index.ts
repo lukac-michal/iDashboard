@@ -2,7 +2,7 @@
 // iDashboard - Main Process Entry Point
 // ============================================================
 
-import { app, net, safeStorage } from 'electron';
+import { app, nativeImage, net, safeStorage } from 'electron';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -293,7 +293,7 @@ async function bootstrap(): Promise<void> {
   // --- Multi-Monitor ---
   const multiMonitor = new MultiMonitorService();
   multiMonitor.onDisplayChange(() => {
-    log('Main', 'Display configuration changed');
+    // silent — fires frequently on macOS when displays wake/sleep
   });
 
   // --- Experimental Mode: Agent Orchestration ---
@@ -377,7 +377,10 @@ async function bootstrap(): Promise<void> {
           // Re-apply custom dock icon — macOS resets it after dock.show()
           if (process.platform === 'darwin') {
             const iconPath = path.join(__dirname, '../../resources/icon.png');
-            app.dock?.setIcon(iconPath);
+            const icon = nativeImage.createFromPath(iconPath);
+            if (!icon.isEmpty()) {
+              app.dock?.setIcon(icon);
+            }
           }
         }
       }
@@ -435,10 +438,13 @@ async function bootstrap(): Promise<void> {
     },
   );
 
-  // Set dock icon in dev mode (production uses icon from app bundle)
+  // Set dock icon (use nativeImage so it works inside asar archives)
   if (process.platform === 'darwin') {
     const dockIconPath = path.join(__dirname, '../../resources/icon.png');
-    app.dock?.setIcon(dockIconPath);
+    const dockIcon = nativeImage.createFromPath(dockIconPath);
+    if (!dockIcon.isEmpty()) {
+      app.dock?.setIcon(dockIcon);
+    }
   }
 
   // Apply app mode (dock vs menu bar)

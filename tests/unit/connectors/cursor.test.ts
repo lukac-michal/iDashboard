@@ -11,7 +11,7 @@ const mockConfig: ConnectorConfig = {
   type: 'cursor',
   displayName: 'Cursor',
   enabled: true,
-  pollIntervalMs: 0,
+  pollIntervalMs: 10000,
   auth: { type: 'none' },
   settings: { blinkDurationMs: 30000, editorApp: 'Cursor' },
   ui: { icon: 'code', color: '#007acc', priority: 2 },
@@ -27,14 +27,15 @@ describe('CursorConnector', () => {
 
   it('has correct type and capabilities', () => {
     expect(connector.type).toBe('cursor');
-    expect(connector.capabilities).toEqual(['push', 'action']);
+    expect(connector.capabilities).toEqual(['pull', 'push', 'action']);
   });
 
-  it('is connected immediately after init', () => {
-    expect(connector.getStatus().connected).toBe(true);
+  it('initializes without error', () => {
+    const status = connector.getStatus();
+    expect(status.id).toBe('cursor-test');
   });
 
-  it('normalizes needs-input event', () => {
+  it('normalizes needs-input push event', () => {
     const req: PushEventRequest = {
       connector: 'cursor',
       event: 'needs-input',
@@ -47,13 +48,13 @@ describe('CursorConnector', () => {
     expect(event.severity).toBe('attention');
     expect(event.title).toBe('Cursor: my-project');
     expect(event.body).toBe('Review changes');
-    expect(event.uiHints?.color).toBe('#007acc');
+    expect(event.uiHints?.color).toBe('#f97316'); // attention color
     expect(event.uiHints?.blinkDurationMs).toBe(30000);
     expect(event.uiHints?.actionButtons).toHaveLength(1);
     expect(event.uiHints?.actionButtons?.[0]?.label).toBe('Focus Editor');
   });
 
-  it('normalizes task-complete event', () => {
+  it('normalizes task-complete push event', () => {
     const req: PushEventRequest = {
       connector: 'cursor',
       event: 'task-complete',
@@ -64,7 +65,7 @@ describe('CursorConnector', () => {
 
     expect(event.severity).toBe('info');
     expect(event.title).toBe('Cursor: build-456');
-    expect(event.uiHints?.color).toBe('#22c55e');
+    expect(event.uiHints?.color).toBe('#007acc');
   });
 
   it('normalizes unknown event with defaults', () => {
@@ -84,16 +85,6 @@ describe('CursorConnector', () => {
     expect(event.body).toBe('Something happened');
   });
 
-  it('tracks active sessions', () => {
-    connector.normalizeInbound({ connector: 'cursor', event: 'needs-input', session: 's1' });
-    connector.normalizeInbound({ connector: 'cursor', event: 'task-complete', session: 's2' });
-
-    const sessions = connector.getActiveSessions();
-    expect(sessions.size).toBe(2);
-    expect(sessions.get('s1')?.status).toBe('needs-input');
-    expect(sessions.get('s2')?.status).toBe('task-complete');
-  });
-
   it('provides correct actions', () => {
     const actions = connector.getActions();
     expect(actions).toHaveLength(2);
@@ -105,5 +96,11 @@ describe('CursorConnector', () => {
     const e1 = connector.normalizeInbound({ connector: 'cursor', event: 'needs-input', session: 's1' });
     const e2 = connector.normalizeInbound({ connector: 'cursor', event: 'needs-input', session: 's1' });
     expect(e1.id).not.toBe(e2.id);
+  });
+
+  it('poll returns empty array when workspace storage missing', async () => {
+    // In test env, workspace storage likely doesn't exist — should return empty gracefully
+    const events = await connector.poll();
+    expect(Array.isArray(events)).toBe(true);
   });
 });

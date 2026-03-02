@@ -22,6 +22,7 @@ Install by adding to ~/.claude/settings.json:
 
 import json
 import os
+import subprocess
 import sys
 import urllib.request
 import urllib.error
@@ -30,14 +31,87 @@ API_URL = os.environ.get("IDASHBOARD_API", "http://localhost:19280/api/v1/events
 MAX_LENGTH = 3000
 
 
+def detect_connector() -> str:
+    """Auto-detect whether we're running inside Cursor or a plain terminal.
+
+    Cursor (VS Code fork) sets TERM_PROGRAM and/or VSCODE_* env vars.
+    Override with IDASHBOARD_CONNECTOR env var if needed.
+    """
+    override = os.environ.get("IDASHBOARD_CONNECTOR", "")
+    if override:
+        return override
+    term = os.environ.get("TERM_PROGRAM", "").lower()
+    if term in ("vscode", "cursor"):
+        return "cursor"
+    if os.environ.get("VSCODE_PID"):
+        return "cursor"
+    return "claude-code"
+
+
+def connector_label() -> str:
+    """Human-readable label for the current connector."""
+    return "Cursor" if detect_connector() == "cursor" else "Claude Code"
+
+
 def truncate(text: str, limit: int = MAX_LENGTH) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 20] + "\n\n... (truncated)"
 
 
+def get_iterm_tab_name():
+    """Resolve the actual iTerm2 tab/session name via AppleScript.
+
+    Reads ITERM_SESSION_ID (format "w0t0p0:GUID"), extracts the GUID,
+    then asks iTerm2 for the session name that matches.
+    Returns None on any failure (not macOS, no iTerm2, timeout, etc.).
+    """
+    if sys.platform != "darwin":
+        return None
+
+    iterm_id = os.environ.get("ITERM_SESSION_ID", "")
+    if not iterm_id or ":" not in iterm_id:
+        return None
+
+    guid = iterm_id.split(":", 1)[1]
+    if not guid:
+        return None
+
+    script = f'''
+tell application "iTerm2"
+    set targetId to "{guid}"
+    repeat with w in windows
+        repeat with t in tabs of w
+            repeat with s in sessions of t
+                try
+                    if (unique id of s) contains targetId then
+                        return name of s
+                    end if
+                end try
+            end repeat
+        end repeat
+    end repeat
+end tell
+return ""
+'''
+
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True, text=True, timeout=2,
+        )
+        name = result.stdout.strip()
+        return name if name else None
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+
+
 def get_session_name() -> str:
-    """Derive a session name from the working directory."""
+    """Derive a human-readable session name from the working directory.
+
+    Uses directory basename — stable across process changes (caffeinate, node, etc.).
+    Tab focusing uses itermSessionId (GUID) instead, so this is purely cosmetic.
+    """
     cwd = os.environ.get("PWD", os.getcwd())
     return os.path.basename(cwd)
 
@@ -65,7 +139,7 @@ def post_event(
         merged.update(metadata)
 
     payload = {
-        "connector": "claude-code",
+        "connector": detect_connector(),
         "event": event_type,
         "title": title,
         "body": truncate(body),
@@ -96,7 +170,7 @@ def handle_notification(hook_data: dict) -> None:
     message = hook_data.get("message", "")
     post_event(
         event_type="needs-input",
-        title=f"Claude Code: {session}",
+        title=f"{connector_label()}: {session}",
         body=message or "Waiting for your input",
         session=session,
         metadata={"hookType": "notification"},
@@ -108,7 +182,7 @@ def handle_task_complete(hook_data: dict) -> None:
     session = get_session_name()
     post_event(
         event_type="task-complete",
-        title=f"Claude Code: {session}",
+        title=f"{connector_label()}: {session}",
         body="Task completed",
         session=session,
         metadata={"hookType": "task-complete"},
@@ -128,7 +202,7 @@ def handle_stop(hook_data: dict) -> None:
 
     post_event(
         event_type=event_type,
-        title=f"Claude Code: {session}",
+        title=f"{connector_label()}: {session}",
         body=message,
         session=session,
         metadata={"hookType": sys.argv[1] if len(sys.argv) > 1 else "stop"},
@@ -167,7 +241,7 @@ def handle_tool_use(hook_data: dict) -> None:
 
     post_event(
         event_type="output-tool-use",
-        title=f"Claude Code: {session} [{tool_name}]",
+        title=f"{connector_label()}: {session} [{tool_name}]",
         body=body,
         session=session,
         metadata={"hookType": "tool-use", "toolName": tool_name},
@@ -184,7 +258,7 @@ def handle_user_prompt(hook_data: dict) -> None:
 
     post_event(
         event_type="user-prompt",
-        title=f"Claude Code: {session}",
+        title=f"{connector_label()}: {session}",
         body=prompt,
         session=session,
         metadata={"hookType": "user-prompt"},

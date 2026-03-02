@@ -37,10 +37,7 @@ export function TitleBar() {
   return (
     <div className={`titlebar-drag flex items-center justify-between ${uiStyle === 'minimal' ? 'h-8 pl-8 pr-4' : 'h-12 pl-10 pr-6'} ${experimentalEnabled ? 'bg-amber-900/30 border-b border-amber-800/50' : 'bg-gray-900/60 border-b border-gray-800/50'} select-none`}>
       <div className="flex items-center gap-3 text-xs">
-        <span
-          className="font-medium cursor-pointer titlebar-no-drag"
-          onClick={() => setActivePanel('dashboard')}
-        >
+        <span className="font-medium">
           <span className="text-white">iDashboard</span>
           <span className="text-gray-500"> v{__APP_VERSION__}</span>
         </span>

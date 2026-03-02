@@ -53,7 +53,7 @@ export class ClaudeCodeConnector extends BaseConnector {
       case 'needs-input':
         return this.createEvent({
           severity: 'attention',
-          title: `Claude Code: ${sessionId}`,
+          title: req.title ?? `Claude Code: ${sessionId}`,
           body: message || 'Waiting for your input',
           category: 'notification',
           eventType: 'needs-input',
@@ -69,7 +69,7 @@ export class ClaudeCodeConnector extends BaseConnector {
       case 'task-complete':
         return this.createEvent({
           severity: 'info',
-          title: `Claude Code: ${sessionId}`,
+          title: req.title ?? `Claude Code: ${sessionId}`,
           body: 'Task completed',
           category: 'notification',
           eventType: 'task-complete',

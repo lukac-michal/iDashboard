@@ -13,6 +13,8 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "package": "electron-builder",
+    "package:mac": "electron-vite build && electron-builder --mac --dir",
+    "install:mac": "electron-vite build && electron-builder --mac --dir && cp -R release/mac-arm64/iDashboard.app /Applications/iDashboard.app",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
   },

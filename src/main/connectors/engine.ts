@@ -209,10 +209,20 @@ export class ConnectorEngine {
       if (!newIds.has(id)) this.disabledConfigs.delete(id);
     }
 
-    // Add/update connectors (addConnector handles enabled/disabled)
+    // Add/update connectors — skip unchanged ones to avoid needless teardown
     for (const config of configs) {
+      const existing = this.connectors.get(config.id);
+      if (existing && this.configEqual(existing.config, config)) continue;
+      const disabled = this.disabledConfigs.get(config.id);
+      if (disabled && !config.enabled && this.configEqual(disabled, config)) continue;
       await this.addConnector(config);
     }
+  }
+
+  /** Shallow comparison of connector configs to detect real changes */
+  private configEqual(a: ConnectorConfig, b: ConnectorConfig): boolean {
+    if (a.enabled !== b.enabled || a.type !== b.type || a.pollIntervalMs !== b.pollIntervalMs) return false;
+    return JSON.stringify(a.settings) === JSON.stringify(b.settings);
   }
 
   /** Destroy all connectors */

@@ -5,6 +5,7 @@ directories:
   buildResources: build
 files:
   - dist/**/*
+  - resources/**/*
   - package.json
 mac:
   icon: build/icon.icns
