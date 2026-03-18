@@ -6,6 +6,8 @@ export interface TerminalSession {
   name: string;
   windowId: number;
   tabId: number;
+  /** iTerm2 unique session identifier (e.g. "w0t3p0:UUID") */
+  sessionId?: string;
 }
 
 export interface TerminalAdapter {

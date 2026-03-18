@@ -99,4 +99,10 @@ export function registerHealthRoutes(server: FastifyInstance, ctx: APIContext): 
   server.get(`${API_PREFIX}/ping`, async (_request, reply) => {
     return reply.send({ ok: true, ts: Date.now() });
   });
+
+  // Debug: list registered agents
+  server.get(`${API_PREFIX}/agents`, async (_request, reply) => {
+    const agents = ctx.agentRegistry?.getAll() ?? [];
+    return reply.send({ ok: true, count: agents.length, agents });
+  });
 }

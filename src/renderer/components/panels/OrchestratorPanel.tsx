@@ -2,10 +2,10 @@
 // OrchestratorPanel - Multi-agent orchestration hub
 // ============================================================
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useDashboardStore } from '@renderer/store/dashboard';
 import { Modal } from '@renderer/components/common/Modal';
-import type { AgentInfo, AgentMessage, AgentStatus } from '@shared/types';
+import type { AgentInfo, AgentMessage, AgentStatus, AgentReportStatus, ProfileOption } from '@shared/types';
 
 const STATUS_COLORS: Record<AgentStatus, string> = {
   online: 'bg-green-400',
@@ -13,6 +13,14 @@ const STATUS_COLORS: Record<AgentStatus, string> = {
   idle: 'bg-blue-400',
   offline: 'bg-gray-500',
   stale: 'bg-red-400',
+};
+
+const REPORT_STATUS_COLORS: Record<AgentReportStatus, string> = {
+  working: 'bg-green-500 text-white',
+  done: 'bg-green-700 text-white',
+  question: 'bg-yellow-500 text-black',
+  blocked: 'bg-red-500 text-white',
+  error: 'bg-red-600 text-white',
 };
 
 function timeAgo(ts: number): string {
@@ -36,8 +44,20 @@ function AgentCard({ agent }: { agent: AgentInfo }) {
         <span className={`w-2 h-2 rounded-full ${STATUS_COLORS[agent.status]}`} />
         <span className="text-xs font-medium text-gray-200 truncate">{agent.name}</span>
       </div>
-      <div className="text-[10px] text-gray-500">{agent.status}</div>
-      <div className="text-[10px] text-gray-600">{timeAgo(agent.lastSeenAt)}</div>
+      <div className="flex items-center gap-1.5 mb-0.5">
+        <span className="text-[10px] text-gray-500">{agent.status}</span>
+        {agent.reportStatus && (
+          <span className={`text-[9px] px-1 py-px rounded ${REPORT_STATUS_COLORS[agent.reportStatus]}`}>
+            {agent.reportStatus}
+          </span>
+        )}
+      </div>
+      {agent.shortSummary && (
+        <div className="text-[10px] text-gray-400 truncate mb-0.5" title={agent.shortSummary}>
+          {agent.shortSummary}
+        </div>
+      )}
+      <div className="text-[10px] text-gray-600">{timeAgo(agent.lastReportAt ?? agent.lastSeenAt)}</div>
     </button>
   );
 }
@@ -105,14 +125,27 @@ function SpawnAgentForm() {
   const [name, setName] = useState('');
   const [profilePath, setProfilePath] = useState('');
   const [spawning, setSpawning] = useState(false);
+  const [profiles, setProfiles] = useState<ProfileOption[]>([]);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    window.iDashboard?.getProfiles().then((p: ProfileOption[]) => setProfiles(p ?? []));
+  }, []);
 
   const handleSpawn = async () => {
     if (!name.trim()) return;
     setSpawning(true);
+    setError('');
     try {
-      await window.iDashboard?.spawnAgent({ name: name.trim(), profilePath: profilePath.trim() || undefined });
-      setName('');
-      setProfilePath('');
+      const result = await window.iDashboard?.spawnAgent({ name: name.trim(), profilePath: profilePath || undefined }) as { ok: boolean; error?: string } | undefined;
+      if (result?.ok) {
+        setName('');
+        setProfilePath('');
+      } else {
+        setError(result?.error ?? 'Spawn failed');
+      }
+    } catch (e) {
+      setError((e as Error).message);
     } finally {
       setSpawning(false);
     }
@@ -128,12 +161,16 @@ function SpawnAgentForm() {
         className="settings-input flex-1"
         onKeyDown={e => { if (e.key === 'Enter') handleSpawn(); }}
       />
-      <input
+      <select
         value={profilePath}
         onChange={e => setProfilePath(e.target.value)}
-        placeholder="Profile path (optional)"
-        className="settings-input flex-1"
-      />
+        className="settings-select flex-1"
+      >
+        <option value="">No profile</option>
+        {profiles.map(p => (
+          <option key={p.path} value={p.path}>{p.name}</option>
+        ))}
+      </select>
       <button
         onClick={handleSpawn}
         disabled={!name.trim() || spawning}
@@ -141,6 +178,9 @@ function SpawnAgentForm() {
       >
         {spawning ? 'Spawning...' : 'Spawn'}
       </button>
+      {error && (
+        <span className="text-[10px] text-red-400 flex-shrink-0">{error}</span>
+      )}
     </div>
   );
 }

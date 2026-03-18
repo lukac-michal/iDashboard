@@ -18,10 +18,14 @@ function runAppleScript(script: string): Promise<string> {
       reject(new Error(`Failed to write temp script: ${(e as Error).message}`));
       return;
     }
-    execFile('osascript', [tmpFile], (err, stdout) => {
+    execFile('osascript', [tmpFile], (err, stdout, stderr) => {
       try { unlinkSync(tmpFile); } catch { /* ignore */ }
-      if (err) reject(new Error(err.message));
-      else resolve(stdout.trim());
+      if (err) {
+        warn('ITerm2Adapter', `AppleScript error: ${stderr || err.message}`);
+        reject(new Error(err.message));
+      } else {
+        resolve(stdout.trim());
+      }
     });
   });
 }
@@ -49,7 +53,8 @@ tell application "iTerm2"
       set tIdx to tIdx + 1
       repeat with s in sessions of t
         set sName to name of s
-        set output to output & wIdx & "," & tIdx & "," & sName & linefeed
+        set sId to unique ID of s
+        set output to output & wIdx & "," & tIdx & "," & sId & "," & sName & linefeed
       end repeat
     end repeat
   end repeat
@@ -61,11 +66,12 @@ end tell
         const trimmed = line.trim();
         if (!trimmed) continue;
         const parts = trimmed.split(',');
-        if (parts.length >= 3) {
+        if (parts.length >= 4) {
           sessions.push({
             windowId: parseInt(parts[0]) || 0,
             tabId: parseInt(parts[1]) || 0,
-            name: parts.slice(2).join(','),
+            sessionId: parts[2],
+            name: parts.slice(3).join(','),
           });
         }
       }
@@ -82,13 +88,17 @@ end tell
   }
 
   async focusSession(session: TerminalSession): Promise<void> {
-    const escapedName = session.name.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    await runAppleScript(`
+    if (!session.sessionId) {
+      warn('ITerm2Adapter', 'focusSession: no sessionId');
+      return;
+    }
+    try {
+      await runAppleScript(`
 tell application "iTerm2"
   repeat with w in windows
     repeat with t in tabs of w
       repeat with s in sessions of t
-        if name of s contains "${escapedName}" then
+        if unique ID of s is "${session.sessionId}" then
           select t
           tell w to select
           activate
@@ -99,6 +109,9 @@ tell application "iTerm2"
   end repeat
 end tell
 `);
+    } catch (e) {
+      warn('ITerm2Adapter', `focusSession failed: ${(e as Error).message}`);
+    }
   }
 
   async createTab(opts: { name?: string; cwd?: string; command?: string }): Promise<TerminalSession> {
@@ -112,47 +125,53 @@ end tell
 tell application "iTerm2"
   tell current window
     set newTab to (create tab with default profile)
-    tell current session of newTab
-      ${escapedCommand ? `write text "${escapedCommand}"` : ''}
-    end tell
+    set newSession to current session of newTab
+    set escapedName to "${(opts.name ?? 'agent').replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"
+    tell newSession to set name to escapedName
+    ${escapedCommand ? `tell newSession to write text "${escapedCommand}"` : ''}
+    set sId to unique ID of newSession
   end tell
-  set wIdx to 0
-  repeat with w in windows
-    set wIdx to wIdx + 1
-    if w is current window then
-      set tCount to count of tabs of w
-      return wIdx & "," & tCount
-    end if
-  end repeat
-  return "1,1"
+  return sId
 end tell
 `);
 
-    const parts = result.split(',');
+    log('ITerm2Adapter', `Created tab, sessionId=${result}`);
     return {
       name: opts.name ?? 'new-tab',
-      windowId: parseInt(parts[0]) || 1,
-      tabId: parseInt(parts[1]) || 1,
+      windowId: 0,
+      tabId: 0,
+      sessionId: result,
     };
   }
 
   async writeText(session: TerminalSession, text: string): Promise<void> {
-    const escapedName = session.name.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    if (!session.sessionId) {
+      warn('ITerm2Adapter', 'writeText: no sessionId');
+      return;
+    }
     const escapedText = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-    await runAppleScript(`
+    log('ITerm2Adapter', `writeText to session ${session.sessionId}: "${text.slice(0, 60)}..."`);
+    try {
+      await runAppleScript(`
 tell application "iTerm2"
   repeat with w in windows
     repeat with t in tabs of w
       repeat with s in sessions of t
-        if name of s contains "${escapedName}" then
+        if unique ID of s is "${session.sessionId}" then
           tell s to write text "${escapedText}"
-          return
+          delay 0.2
+          tell s to write text ""
+          return "ok"
         end if
       end repeat
     end repeat
   end repeat
+  return "not_found"
 end tell
 `);
+    } catch (e) {
+      warn('ITerm2Adapter', `writeText failed: ${(e as Error).message}`);
+    }
   }
 
   async activate(): Promise<void> {

@@ -14,6 +14,14 @@ vi.mock('@main/utils/log', () => ({
   error: vi.fn(),
 }));
 
+// Mock fs so loadPreamble doesn't read from disk
+vi.mock('node:fs', () => ({
+  readFileSync: vi.fn().mockReturnValue('Preamble for {{AGENT_NAME}} on port {{PORT}}'),
+  existsSync: vi.fn().mockReturnValue(true),
+  writeFileSync: vi.fn(),
+  mkdirSync: vi.fn(),
+}));
+
 function createMockAdapter(): TerminalAdapter {
   return {
     isRunning: vi.fn().mockResolvedValue(true),
@@ -34,7 +42,7 @@ describe('AgentLifecycleService', () => {
   beforeEach(() => {
     registry = new AgentRegistry(5000);
     adapter = createMockAdapter();
-    lifecycle = new AgentLifecycleService(registry, adapter, '/tmp/repo');
+    lifecycle = new AgentLifecycleService(registry, adapter, '/tmp/repo', 19280);
   });
 
   afterEach(() => {
@@ -51,13 +59,21 @@ describe('AgentLifecycleService', () => {
     );
   });
 
-  it('spawns with profile path', async () => {
-    await lifecycle.spawnAgent({ name: 'be', profilePath: '/path/to/profile.md' });
+  it('spawns with preamble in system prompt', async () => {
+    await lifecycle.spawnAgent({ name: 'be' });
     expect(adapter.createTab).toHaveBeenCalledWith(
       expect.objectContaining({
-        command: expect.stringContaining('claude --profile'),
+        command: expect.stringContaining('--append-system-prompt'),
       }),
     );
+  });
+
+  it('loadPreamble replaces placeholders', () => {
+    const result = lifecycle.loadPreamble('TestAgent');
+    expect(result).toContain('TestAgent');
+    expect(result).toContain('19280');
+    expect(result).not.toContain('{{AGENT_NAME}}');
+    expect(result).not.toContain('{{PORT}}');
   });
 
   it('sends text to a spawned agent', async () => {
@@ -130,5 +146,38 @@ describe('AgentLifecycleService', () => {
     lifecycle.startHealthMonitoring(1000);
     lifecycle.destroy();
     // No error = success; internal timer and map are cleared
+  });
+
+  // --- findAgentByTerminalId ---
+
+  it('findAgentByTerminalId matches GUID from ITERM_SESSION_ID format', async () => {
+    // Mock createTab to return a session with a sessionId (GUID)
+    (adapter.createTab as ReturnType<typeof vi.fn>).mockResolvedValue({
+      name: 'worker',
+      windowId: 1,
+      tabId: 1,
+      sessionId: 'ABC-DEF-123',
+    });
+
+    const agent = await lifecycle.spawnAgent({ name: 'worker' });
+
+    // ITERM_SESSION_ID format is "w0t3p0:GUID"
+    expect(lifecycle.findAgentByTerminalId('w0t1p0:ABC-DEF-123')).toBe(agent.id);
+  });
+
+  it('findAgentByTerminalId returns undefined for non-matching ID', async () => {
+    (adapter.createTab as ReturnType<typeof vi.fn>).mockResolvedValue({
+      name: 'worker',
+      windowId: 1,
+      tabId: 1,
+      sessionId: 'ABC-DEF-123',
+    });
+
+    await lifecycle.spawnAgent({ name: 'worker' });
+    expect(lifecycle.findAgentByTerminalId('w0t1p0:XYZ-999')).toBeUndefined();
+  });
+
+  it('findAgentByTerminalId returns undefined for empty input', () => {
+    expect(lifecycle.findAgentByTerminalId('')).toBeUndefined();
   });
 });

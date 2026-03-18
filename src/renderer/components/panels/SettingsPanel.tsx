@@ -1050,6 +1050,10 @@ function ExperimentalSettings() {
         <span className="text-[10px] text-gray-500">
           Enables multi-agent orchestration. Replaces History tab with Orchestrator and shows an amber title bar badge.
         </span>
+        <br />
+        <span className="text-[10px] text-amber-500">
+          Restart the app after toggling for agent spawning to take effect.
+        </span>
       </div>
 
       <SectionTitle>Repository</SectionTitle>

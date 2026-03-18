@@ -59,6 +59,7 @@ let logCollector: LogCollector;
 let agentRegistry: AgentRegistry | undefined;
 let agentLifecycle: AgentLifecycleService | undefined;
 let masterAgent: MasterAgentService | undefined;
+let pmAgentId: string | undefined;
 let slackBridge: SlackBridgeService | undefined;
 let slackChannelLogger: SlackChannelLogger | undefined;
 
@@ -159,6 +160,60 @@ async function bootstrap(): Promise<void> {
     eventStore.insert(processed);
     aggregator.recordEvent(processed);
 
+    // Auto-update spawned agent status from hook events
+    if (agentLifecycle && agentRegistry && processed.metadata?.itermSessionId) {
+      const matchedAgentId = agentLifecycle.findAgentByTerminalId(
+        processed.metadata.itermSessionId as string,
+      );
+      if (matchedAgentId) {
+        const hookType = processed.metadata.hookType as string | undefined;
+        const eventType = processed.eventType;
+
+        // Map hook/event types to agent report statuses
+        let reportStatus: import('@shared/types').AgentReportStatus | undefined;
+        let summary = '';
+
+        if (eventType === 'needs-input' || hookType === 'notification') {
+          reportStatus = 'question';
+          summary = processed.body ?? 'Waiting for input';
+        } else if (eventType === 'output-stop' || hookType === 'stop') {
+          reportStatus = 'done';
+          summary = (processed.body ?? 'Task completed').slice(0, 120);
+        } else if (eventType === 'output-subagent-stop' || hookType === 'subagent-stop') {
+          reportStatus = 'working';
+          summary = 'Subagent finished';
+        } else if (eventType === 'output-tool-use' || hookType === 'tool-use') {
+          reportStatus = 'working';
+          const toolName = (processed.metadata.toolName as string) ?? 'tool';
+          summary = `Using ${toolName}`;
+        } else if (eventType === 'user-prompt' || hookType === 'user-prompt') {
+          reportStatus = 'working';
+          summary = 'Received new prompt';
+        }
+
+        if (reportStatus) {
+          agentRegistry.updateReport(matchedAgentId, reportStatus, summary);
+          log('Event', `Auto-updated agent ${matchedAgentId} → ${reportStatus}: ${summary}`);
+
+          // Surface notification for question/blocked
+          if (reportStatus === 'question' || reportStatus === 'blocked') {
+            windowManager.surfaceForNotification();
+            pushToRenderer(mainWindow, IPC.APP_NAVIGATE, 'orchestrator');
+            soundService.play(windowManager.getWindow());
+          }
+
+          // Route long output to PM agent
+          if (reportStatus === 'done' && processed.body && masterAgent && pmAgentId) {
+            const agentName = agentRegistry.get(matchedAgentId)?.name ?? matchedAgentId;
+            masterAgent.routeTask(
+              pmAgentId,
+              `[Auto-report from ${agentName} — done]\n${processed.body.slice(0, 2000)}`,
+            ).catch(err => warn('Event', `Failed to route auto-report to PM: ${err}`));
+          }
+        }
+      }
+    }
+
     // Bridge Slack events into master agent message feed
     if (masterAgent && processed.connectorId) {
       const connStatus = connectorEngine.getStatuses().find(s => s.id === processed.connectorId);
@@ -230,6 +285,12 @@ async function bootstrap(): Promise<void> {
   // --- Hook Script Auto-Setup ---
   setupBridgeHookScript(configDir);
 
+  // --- Default Profiles Auto-Setup ---
+  setupDefaultProfiles(configDir);
+
+  // --- Default Preambles Auto-Setup ---
+  setupDefaultPreambles(configDir);
+
   // --- Window ---
   const preloadPath = path.join(__dirname, '../preload/index.js');
   windowManager = new WindowManager(config.window, preloadPath);
@@ -296,7 +357,7 @@ async function bootstrap(): Promise<void> {
     // silent — fires frequently on macOS when displays wake/sleep
   });
 
-  // --- Experimental Mode: Agent Orchestration ---
+  // --- Experimental Mode: Agent Orchestration (sync init only, spawn is deferred) ---
   if (config.experimental?.enabled) {
     log('Main', 'Experimental mode enabled — initializing agent orchestration');
     agentRegistry = new AgentRegistry(config.experimental.healthCheckIntervalMs * 3);
@@ -305,6 +366,7 @@ async function bootstrap(): Promise<void> {
       agentRegistry,
       terminalAdapter,
       config.experimental.repoPath || process.cwd(),
+      config.api.port,
     );
     masterAgent = new MasterAgentService(agentLifecycle, agentRegistry, connectorEngine);
 
@@ -327,7 +389,7 @@ async function bootstrap(): Promise<void> {
     agentLifecycle.startHealthMonitoring(config.experimental.healthCheckIntervalMs);
   }
 
-  // --- IPC ---
+  // --- IPC (must register before any async spawns so renderer can call getConfig) ---
   registerIPCHandlers({
     engine: connectorEngine,
     eventStore,
@@ -416,8 +478,32 @@ async function bootstrap(): Promise<void> {
     config,
     broadcastEvent: () => {},
     slackBridge,
+    agentRegistry,
+    masterAgent,
+    agentLifecycle,
+    pmAgentId,
+    getPmAgentId: () => pmAgentId,
+    surfaceNotification: () => {
+      windowManager.surfaceForNotification();
+      pushToRenderer(mainWindow, IPC.APP_NAVIGATE, 'orchestrator');
+      soundService.play(windowManager.getWindow());
+    },
   });
   await startAPIServer(apiServer, config.api.port, config.api.bind);
+
+  // --- Deferred PM Agent Auto-Spawn (non-blocking so it doesn't delay IPC) ---
+  if (config.experimental?.enabled && agentLifecycle) {
+    const pmProfilePath = path.join(configDir, 'profiles', config.experimental.pmProfile || 'orchestrator.md');
+    agentLifecycle.spawnAgent({
+      name: 'ProjectManager',
+      profilePath: fs.existsSync(pmProfilePath) ? pmProfilePath : undefined,
+    }).then((pmAgent) => {
+      pmAgentId = pmAgent.id;
+      log('Main', `PM agent auto-spawned: ${pmAgent.id}`);
+    }).catch((err) => {
+      warn('Main', `Failed to auto-spawn PM agent: ${err}`);
+    });
+  }
 
   // --- Auto-Updater ---
   autoUpdater = new AutoUpdaterService();
@@ -494,6 +580,76 @@ function setupBridgeHookScript(configDir: string): void {
     log('Main', 'Bridge hook script source not found — skipping auto-install');
   } catch (err) {
     warn('Main', `Failed to install bridge hook script: ${err}`);
+  }
+}
+
+/** Copy bundled default profiles to ~/.idashboard/profiles/ (skip existing files) */
+function setupDefaultProfiles(configDir: string): void {
+  const profilesDir = path.join(configDir, 'profiles');
+
+  try {
+    fs.mkdirSync(profilesDir, { recursive: true });
+
+    const candidates = [
+      path.join(__dirname, '../../resources/profiles'),
+      path.join(app.getAppPath(), 'resources/profiles'),
+    ];
+
+    for (const srcDir of candidates) {
+      if (!fs.existsSync(srcDir)) continue;
+      const files = fs.readdirSync(srcDir).filter(f => f.endsWith('.md'));
+      let copied = 0;
+      for (const file of files) {
+        const dest = path.join(profilesDir, file);
+        if (!fs.existsSync(dest)) {
+          fs.copyFileSync(path.join(srcDir, file), dest);
+          copied++;
+        }
+      }
+      if (files.length > 0) {
+        log('Main', `Default profiles: ${copied} new / ${files.length - copied} existing in ${profilesDir}`);
+        return;
+      }
+    }
+
+    log('Main', 'Default profiles source not found — skipping auto-install');
+  } catch (err) {
+    warn('Main', `Failed to install default profiles: ${err}`);
+  }
+}
+
+/** Copy bundled default preambles to ~/.idashboard/preambles/ (skip existing files) */
+function setupDefaultPreambles(configDir: string): void {
+  const preamblesDir = path.join(configDir, 'preambles');
+
+  try {
+    fs.mkdirSync(preamblesDir, { recursive: true });
+
+    const candidates = [
+      path.join(__dirname, '../../resources/preambles'),
+      path.join(app.getAppPath(), 'resources/preambles'),
+    ];
+
+    for (const srcDir of candidates) {
+      if (!fs.existsSync(srcDir)) continue;
+      const files = fs.readdirSync(srcDir).filter(f => f.endsWith('.md'));
+      let copied = 0;
+      for (const file of files) {
+        const dest = path.join(preamblesDir, file);
+        if (!fs.existsSync(dest)) {
+          fs.copyFileSync(path.join(srcDir, file), dest);
+          copied++;
+        }
+      }
+      if (files.length > 0) {
+        log('Main', `Default preambles: ${copied} new / ${files.length - copied} existing in ${preamblesDir}`);
+        return;
+      }
+    }
+
+    log('Main', 'Default preambles source not found — skipping auto-install');
+  } catch (err) {
+    warn('Main', `Failed to install default preambles: ${err}`);
   }
 }
 

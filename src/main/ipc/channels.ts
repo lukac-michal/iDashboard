@@ -271,6 +271,7 @@ export function registerIPCHandlers(ctx: IPCContext): void {
   });
 
   ipcMain.handle(IPC.AGENT_SPAWN, async (_event, opts: { name: string; profilePath?: string }) => {
+    log('IPC', `AGENT_SPAWN called: name=${opts?.name}, profilePath=${opts?.profilePath}`);
     if (!ctx.agentLifecycle) return { ok: false, error: 'Experimental mode not enabled' };
     try {
       const agent = await ctx.agentLifecycle.spawnAgent(opts);
@@ -316,6 +317,23 @@ export function registerIPCHandlers(ctx: IPCContext): void {
 
   ipcMain.handle(IPC.MASTER_MESSAGES, () => {
     return ctx.masterAgent?.getMessages() ?? [];
+  });
+
+  // --- Profiles ---
+
+  ipcMain.handle(IPC.PROFILES_LIST, () => {
+    log('IPC', 'PROFILES_LIST called');
+    const profilesDir = path.join(os.homedir(), '.idashboard', 'profiles');
+    try {
+      if (!fs.existsSync(profilesDir)) return [];
+      const files = fs.readdirSync(profilesDir).filter(f => f.endsWith('.md')).sort();
+      return files.map(f => ({
+        name: f.replace(/\.md$/, '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+        path: path.join(profilesDir, f),
+      }));
+    } catch {
+      return [];
+    }
   });
 
   // --- Connector Force Poll ---

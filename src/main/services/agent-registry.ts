@@ -4,7 +4,7 @@
 
 import { EventEmitter } from 'node:events';
 import { log } from '@main/utils/log';
-import type { AgentInfo, AgentStatus } from '@shared/types';
+import type { AgentInfo, AgentStatus, AgentReportStatus } from '@shared/types';
 
 export class AgentRegistry extends EventEmitter {
   private agents = new Map<string, AgentInfo>();
@@ -56,6 +56,25 @@ export class AgentRegistry extends EventEmitter {
 
   get(agentId: string): AgentInfo | undefined {
     return this.agents.get(agentId);
+  }
+
+  findByName(name: string): AgentInfo | undefined {
+    const lower = name.toLowerCase();
+    for (const agent of this.agents.values()) {
+      if (agent.name.toLowerCase() === lower) return agent;
+    }
+    return undefined;
+  }
+
+  updateReport(agentId: string, status: AgentReportStatus, shortSummary: string): boolean {
+    const agent = this.agents.get(agentId);
+    if (!agent) return false;
+    agent.reportStatus = status;
+    agent.shortSummary = shortSummary;
+    agent.lastReportAt = Date.now();
+    agent.lastSeenAt = Date.now();
+    this.emit('agent:updated', agent);
+    return true;
   }
 
   markStale(): string[] {

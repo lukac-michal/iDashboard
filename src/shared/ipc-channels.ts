@@ -102,6 +102,9 @@ export const IPC = {
   // Slack Bridge
   SLACK_BRIDGE_INSTALL_HOOKS: 'slack-bridge:install-hooks',
 
+  // Profiles
+  PROFILES_LIST: 'profiles:list',
+
   // App lifecycle
   APP_READY: 'app:ready',
   APP_FOCUS_TERMINAL: 'app:focus-terminal',

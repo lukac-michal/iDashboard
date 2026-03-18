@@ -310,6 +310,15 @@ export interface AppConfig {
 
 export type AgentStatus = 'online' | 'busy' | 'idle' | 'offline' | 'stale';
 
+export type AgentReportStatus = 'working' | 'done' | 'question' | 'blocked' | 'error';
+
+export interface AgentReportRequest {
+  agentName: string;
+  status: AgentReportStatus;
+  shortSummary: string;
+  longSummary?: string;
+}
+
 export interface AgentInfo {
   id: string;
   name: string;
@@ -318,6 +327,9 @@ export interface AgentInfo {
   sessionName?: string;
   registeredAt: number;
   lastSeenAt: number;
+  reportStatus?: AgentReportStatus;
+  shortSummary?: string;
+  lastReportAt?: number;
 }
 
 export interface AgentMessage {
@@ -490,6 +502,11 @@ export interface PushEventRequest {
   message?: string;
   metadata?: Record<string, unknown>;
   uiHints?: EventUIHints;
+}
+
+export interface ProfileOption {
+  name: string;
+  path: string;
 }
 
 export interface WebhookPayload {

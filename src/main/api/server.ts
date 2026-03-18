@@ -13,11 +13,15 @@ import { registerConnectorRoutes } from './routes/connectors';
 import { registerWebhookRoutes } from './routes/webhooks';
 import { registerHealthRoutes } from './routes/health';
 import { registerSlackDebugRoutes } from './routes/slack-debug';
+import { registerAgentReportRoutes } from './routes/agent-reports';
 import { registerWebSocket } from './websocket';
 import type { ConnectorEngine } from '@main/connectors/engine';
 import type { EventStore } from '@main/db/event-store';
 import type { Aggregator } from '@main/db/aggregator';
 import type { SlackBridgeService } from '@main/services/slack-bridge';
+import type { AgentRegistry } from '@main/services/agent-registry';
+import type { MasterAgentService } from '@main/services/master-agent';
+import type { AgentLifecycleService } from '@main/services/agent-lifecycle';
 
 export interface APIContext {
   engine: ConnectorEngine;
@@ -26,6 +30,12 @@ export interface APIContext {
   config: AppConfig;
   broadcastEvent: (event: unknown) => void;
   slackBridge?: SlackBridgeService | null;
+  agentRegistry?: AgentRegistry | null;
+  masterAgent?: MasterAgentService | null;
+  agentLifecycle?: AgentLifecycleService | null;
+  pmAgentId?: string | null;
+  getPmAgentId?: () => string | undefined;
+  surfaceNotification?: () => void;
 }
 
 export async function createAPIServer(ctx: APIContext): Promise<FastifyInstance> {
@@ -69,6 +79,7 @@ export async function createAPIServer(ctx: APIContext): Promise<FastifyInstance>
   registerConnectorRoutes(server, ctx);
   registerWebhookRoutes(server, ctx);
   registerHealthRoutes(server, ctx);
+  registerAgentReportRoutes(server, ctx);
   registerSlackDebugRoutes(server, ctx);
   registerWebSocket(server, ctx);
 

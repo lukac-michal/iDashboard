@@ -2,10 +2,15 @@
 // AgentLifecycleService - Spawn, monitor, and manage agents
 // ============================================================
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import { log, warn } from '@main/utils/log';
 import type { AgentRegistry } from './agent-registry';
 import type { TerminalAdapter, TerminalSession } from './terminal-adapter';
 import type { AgentInfo } from '@shared/types';
+
+const PROMPT_DIR = path.join(os.tmpdir(), 'idash-prompts');
 
 export interface SpawnOptions {
   name: string;
@@ -16,22 +21,57 @@ export class AgentLifecycleService {
   private registry: AgentRegistry;
   private adapter: TerminalAdapter;
   private repoPath: string;
+  private apiPort: number;
   private sessionMap = new Map<string, TerminalSession>();
   private healthTimer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(registry: AgentRegistry, adapter: TerminalAdapter, repoPath: string) {
+  constructor(registry: AgentRegistry, adapter: TerminalAdapter, repoPath: string, apiPort: number = 19280) {
     this.registry = registry;
     this.adapter = adapter;
     this.repoPath = repoPath;
+    this.apiPort = apiPort;
+  }
+
+  loadPreamble(agentName: string): string {
+    const preamblePath = path.join(os.homedir(), '.idashboard', 'preambles', 'agent-preamble.md');
+    try {
+      const template = fs.readFileSync(preamblePath, 'utf-8');
+      return template
+        .replace(/\{\{AGENT_NAME\}\}/g, agentName)
+        .replace(/\{\{PORT\}\}/g, String(this.apiPort));
+    } catch {
+      warn('AgentLifecycle', `Preamble not found at ${preamblePath}, spawning without preamble`);
+      return '';
+    }
   }
 
   async spawnAgent(opts: SpawnOptions): Promise<AgentInfo> {
     const id = `agent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    const command = opts.profilePath
-      ? `claude --profile ${JSON.stringify(opts.profilePath)}`
-      : 'claude';
 
-    log('AgentLifecycle', `Spawning agent: ${opts.name} (${id}), command: ${command}`);
+    const preamble = this.loadPreamble(opts.name);
+    let systemPrompt = preamble;
+
+    if (opts.profilePath) {
+      try {
+        const profileContent = fs.readFileSync(opts.profilePath, 'utf-8');
+        systemPrompt = systemPrompt ? `${systemPrompt}\n\n${profileContent}` : profileContent;
+      } catch {
+        warn('AgentLifecycle', `Profile not found at ${opts.profilePath}, using preamble only`);
+      }
+    }
+
+    let command: string;
+    if (systemPrompt) {
+      // Write prompt to a temp file — avoids shell/AppleScript escaping issues with long strings
+      if (!fs.existsSync(PROMPT_DIR)) fs.mkdirSync(PROMPT_DIR, { recursive: true });
+      const promptFile = path.join(PROMPT_DIR, `${id}.md`);
+      fs.writeFileSync(promptFile, systemPrompt, 'utf-8');
+      command = `claude --append-system-prompt "$(cat ${promptFile})"`;
+    } else {
+      command = 'claude';
+    }
+
+    log('AgentLifecycle', `Spawning agent: ${opts.name} (${id}), command length: ${command.length}`);
 
     const session = await this.adapter.createTab({
       name: opts.name,
@@ -71,6 +111,25 @@ export class AgentLifecycleService {
     await this.adapter.activate();
   }
 
+  /**
+   * Match an iTerm2 session ID (from ITERM_SESSION_ID env var, format "w0t3p0:GUID")
+   * to a spawned agent. Returns the agent ID if found.
+   */
+  findAgentByTerminalId(itermSessionId: string): string | undefined {
+    // Extract GUID from "w0t3p0:GUID" format
+    const guid = itermSessionId.includes(':')
+      ? itermSessionId.split(':').slice(1).join(':')
+      : itermSessionId;
+    if (!guid) return undefined;
+
+    for (const [agentId, session] of this.sessionMap) {
+      if (session.sessionId && session.sessionId === guid) {
+        return agentId;
+      }
+    }
+    return undefined;
+  }
+
   startHealthMonitoring(intervalMs: number): void {
     if (this.healthTimer) clearInterval(this.healthTimer);
     log('AgentLifecycle', `Starting health monitoring every ${intervalMs}ms`);
@@ -88,17 +147,19 @@ export class AgentLifecycleService {
       }
 
       const sessions = await this.adapter.listSessions();
-      const sessionNames = sessions.map(s => s.name);
 
       for (const [agentId, session] of this.sessionMap) {
         const agent = this.registry.get(agentId);
         if (!agent || agent.status === 'offline') continue;
 
-        const found = sessionNames.some(n => n.includes(session.name));
+        // Match by unique session ID
+        const found = session.sessionId
+          ? sessions.some(s => s.sessionId === session.sessionId)
+          : sessions.some(s => s.windowId === session.windowId && s.tabId === session.tabId);
         if (found) {
           this.registry.heartbeat(agentId);
         } else {
-          warn('AgentLifecycle', `Agent session "${session.name}" not found, marking offline`);
+          warn('AgentLifecycle', `Agent tab w${session.windowId}t${session.tabId} not found, marking offline`);
           this.registry.updateStatus(agentId, 'offline');
         }
       }

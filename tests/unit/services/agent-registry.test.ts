@@ -138,4 +138,40 @@ describe('AgentRegistry', () => {
   it('get returns undefined for unknown agent', () => {
     expect(registry.get('nope')).toBeUndefined();
   });
+
+  // --- findByName ---
+
+  it('findByName finds agent case-insensitively', () => {
+    registry.register(makeAgent('a1', 'FrontEnd'));
+    expect(registry.findByName('frontend')?.id).toBe('a1');
+    expect(registry.findByName('FRONTEND')?.id).toBe('a1');
+    expect(registry.findByName('FrontEnd')?.id).toBe('a1');
+  });
+
+  it('findByName returns undefined for unknown name', () => {
+    registry.register(makeAgent('a1', 'backend'));
+    expect(registry.findByName('nope')).toBeUndefined();
+  });
+
+  // --- updateReport ---
+
+  it('updateReport sets report fields and emits agent:updated', () => {
+    const handler = vi.fn();
+    registry.on('agent:updated', handler);
+    registry.register(makeAgent('a1', 'worker'));
+    handler.mockClear();
+
+    const result = registry.updateReport('a1', 'working', 'Implementing feature X');
+    expect(result).toBe(true);
+
+    const agent = registry.get('a1')!;
+    expect(agent.reportStatus).toBe('working');
+    expect(agent.shortSummary).toBe('Implementing feature X');
+    expect(agent.lastReportAt).toBeGreaterThan(0);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('updateReport returns false for unknown agent', () => {
+    expect(registry.updateReport('nope', 'done', 'finished')).toBe(false);
+  });
 });

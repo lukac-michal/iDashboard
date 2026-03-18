@@ -85,6 +85,9 @@ const api = {
     ipcRenderer.invoke(IPC.MASTER_ROUTE_TASK, { agentId, task }),
   getMasterMessages: () => ipcRenderer.invoke(IPC.MASTER_MESSAGES),
 
+  // Profiles
+  getProfiles: () => ipcRenderer.invoke(IPC.PROFILES_LIST),
+
   // Force poll
   forcePollConnector: (connectorId: string) =>
     ipcRenderer.invoke(IPC.CONNECTORS_FORCE_POLL, connectorId),
