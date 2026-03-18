@@ -1,0 +1,59 @@
+# iDashboard Workflow Orchestrator Configuration
+# Used by the /flow skill to control workflow behavior.
+
+# Workflow mode: full | fast | minimal | auto
+mode: auto
+
+# Auto-detection rules (only used when mode: auto)
+auto_detection:
+  default_mode: full
+  rules:
+    full:
+      - security
+      - auth
+      - migration
+      - breaking change
+      - database schema
+      - multi-process
+      - ipc
+      - electron
+    minimal:
+      - typo
+      - rename
+      - bump
+      - fix import
+      - update version
+      - simple fix
+
+# Which agents participate in each mode
+modes:
+  full:
+    agents: [architect, planner, plan-reviewer, skeptic, implementer, code-reviewer]
+  fast:
+    agents: [architect, planner, plan-reviewer, implementer, code-reviewer]
+  minimal:
+    agents: [planner, implementer]
+
+# Model per agent (omit or null to inherit session model)
+models:
+  architect: opus
+  planner: opus
+  plan-reviewer: sonnet
+  skeptic: sonnet
+  code-reviewer: sonnet
+
+# Human checkpoints - which phases pause for user approval
+checkpoints:
+  after_plan: true
+  before_commit: true
+  on_critical_review: true
+
+# Max times the planner is re-dispatched when plan-reviewer finds issues
+max_plan_revisions: 1
+
+# Implementation loop mode - automatic retry when build/tests fail
+loop_mode:
+  enabled: true
+  verification: all       # build | tests | all
+  try_different_approach_after: 3
+  escalate_after: 5
