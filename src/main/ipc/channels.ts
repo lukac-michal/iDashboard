@@ -301,6 +301,16 @@ export function registerIPCHandlers(ctx: IPCContext): void {
     }
   });
 
+  ipcMain.handle(IPC.AGENT_TERMINATE, async (_event, agentId: string) => {
+    if (!ctx.agentLifecycle) return { ok: false, error: 'Experimental mode not enabled' };
+    try {
+      await ctx.agentLifecycle.terminateAgent(agentId);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  });
+
   ipcMain.handle(IPC.AGENT_MESSAGES_LIST, () => {
     return ctx.masterAgent?.getMessages() ?? [];
   });

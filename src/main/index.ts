@@ -386,6 +386,7 @@ async function bootstrap(): Promise<void> {
       pushToRenderer(mainWindow, IPC.AGENT_MESSAGES_STREAM, msg);
     });
 
+    await agentLifecycle.recoverAgents();
     agentLifecycle.startHealthMonitoring(config.experimental.healthCheckIntervalMs);
   }
 

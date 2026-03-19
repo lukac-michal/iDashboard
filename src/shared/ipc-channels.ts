@@ -87,6 +87,7 @@ export const IPC = {
   AGENT_SPAWN: 'agent:spawn',
   AGENT_SEND_TEXT: 'agent:send-text',
   AGENT_FOCUS: 'agent:focus',
+  AGENT_TERMINATE: 'agent:terminate',
 
   // Master agent
   MASTER_ROUTE_TASK: 'master:route-task',

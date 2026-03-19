@@ -30,16 +30,31 @@ function timeAgo(ts: number): string {
   return `${Math.floor(sec / 3600)}h ago`;
 }
 
-function AgentCard({ agent }: { agent: AgentInfo }) {
+function AgentCard({ agent, onTerminate, confirmingTerminate }: { agent: AgentInfo; onTerminate: (id: string) => void; confirmingTerminate: boolean }) {
   const handleFocus = () => {
     window.iDashboard?.focusAgent(agent.id);
+  };
+
+  const handleTerminate = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onTerminate(agent.id);
   };
 
   return (
     <button
       onClick={handleFocus}
-      className="flex-shrink-0 w-36 bg-gray-900/60 border border-gray-800/50 rounded-lg p-3 hover:bg-gray-800/40 transition-colors text-left"
+      className={`flex-shrink-0 w-36 bg-gray-900/60 border rounded-lg p-3 hover:bg-gray-800/40 transition-colors text-left relative group ${confirmingTerminate ? 'border-red-500/70' : 'border-gray-800/50'}`}
     >
+      {/* Terminate button - top right, visible on hover */}
+      {agent.status !== 'offline' && (
+        <span
+          onClick={handleTerminate}
+          className={`absolute top-1 right-1 w-4 h-4 flex items-center justify-center text-xs cursor-pointer transition-opacity ${confirmingTerminate ? 'text-red-400 opacity-100' : 'text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100'}`}
+          title={confirmingTerminate ? 'Click again to confirm' : 'Terminate agent'}
+        >
+          x
+        </span>
+      )}
       <div className="flex items-center gap-2 mb-1">
         <span className={`w-2 h-2 rounded-full ${STATUS_COLORS[agent.status]}`} />
         <span className="text-xs font-medium text-gray-200 truncate">{agent.name}</span>
@@ -318,8 +333,19 @@ export function OrchestratorPanel() {
   const setModalMessage = useDashboardStore(s => s.setModalMessage);
   const slackChannels = useDashboardStore(s => s.slackChannels);
   const [prefillTask, setPrefillTask] = useState('');
+  const [confirmTerminate, setConfirmTerminate] = useState<string | null>(null);
   const [prefillSlackChannel, setPrefillSlackChannel] = useState('');
   const [prefillSlackText, setPrefillSlackText] = useState('');
+
+  const handleTerminate = async (agentId: string) => {
+    if (confirmTerminate !== agentId) {
+      setConfirmTerminate(agentId);
+      setTimeout(() => setConfirmTerminate(null), 3000); // reset after 3s
+      return;
+    }
+    setConfirmTerminate(null);
+    await window.iDashboard?.terminateAgent(agentId);
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -335,7 +361,7 @@ export function OrchestratorPanel() {
         ) : (
           <div className="flex gap-2 p-3 overflow-x-auto">
             {agents.map(agent => (
-              <AgentCard key={agent.id} agent={agent} />
+              <AgentCard key={agent.id} agent={agent} onTerminate={handleTerminate} confirmingTerminate={confirmTerminate === agent.id} />
             ))}
           </div>
         )}

@@ -80,6 +80,7 @@ const api = {
   sendTextToAgent: (agentId: string, text: string) =>
     ipcRenderer.invoke(IPC.AGENT_SEND_TEXT, { agentId, text }),
   focusAgent: (agentId: string) => ipcRenderer.invoke(IPC.AGENT_FOCUS, agentId),
+  terminateAgent: (agentId: string) => ipcRenderer.invoke(IPC.AGENT_TERMINATE, agentId),
   getAgentMessages: () => ipcRenderer.invoke(IPC.AGENT_MESSAGES_LIST),
   routeTask: (agentId: string, task: string) =>
     ipcRenderer.invoke(IPC.MASTER_ROUTE_TASK, { agentId, task }),

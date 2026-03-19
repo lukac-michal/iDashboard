@@ -104,6 +104,65 @@ export class AgentLifecycleService {
     await this.adapter.writeText(session, text);
   }
 
+  async terminateAgent(agentId: string): Promise<void> {
+    const session = this.sessionMap.get(agentId);
+    if (!session) {
+      // No session but might still be in registry -- clean up
+      this.registry.unregister(agentId);
+      return;
+    }
+
+    log('AgentLifecycle', `Terminating agent: ${agentId} (${session.name})`);
+
+    // Use adapter.terminate if available (PTY adapter), otherwise try closing via adapter
+    if (this.adapter.terminate) {
+      await this.adapter.terminate(session);
+    }
+
+    // Clean up
+    this.sessionMap.delete(agentId);
+    this.registry.unregister(agentId);
+
+    // Clean up temp prompt file
+    const promptFile = path.join(PROMPT_DIR, `${agentId}.md`);
+    try { fs.unlinkSync(promptFile); } catch { /* file may not exist */ }
+  }
+
+  async recoverAgents(): Promise<void> {
+    const agents = this.registry.getAll();
+    if (agents.length === 0) return;
+
+    log('AgentLifecycle', `Recovering ${agents.length} agent(s) from previous session`);
+
+    const running = await this.adapter.isRunning();
+    if (!running) {
+      // Terminal not running -- mark all as offline
+      for (const agent of agents) {
+        this.registry.updateStatus(agent.id, 'offline');
+      }
+      log('AgentLifecycle', 'Terminal not running, all agents marked offline');
+      return;
+    }
+
+    const sessions = await this.adapter.listSessions();
+
+    for (const agent of agents) {
+      // Try to find matching terminal session
+      const matchedSession = sessions.find(s =>
+        s.name === agent.sessionName || s.name === agent.name
+      );
+
+      if (matchedSession) {
+        this.sessionMap.set(agent.id, matchedSession);
+        this.registry.updateStatus(agent.id, 'stale'); // needs heartbeat to confirm
+        log('AgentLifecycle', `Recovered session for agent ${agent.name}`);
+      } else {
+        this.registry.updateStatus(agent.id, 'offline');
+        log('AgentLifecycle', `No session found for agent ${agent.name}, marked offline`);
+      }
+    }
+  }
+
   async focusAgent(agentId: string): Promise<void> {
     const session = this.sessionMap.get(agentId);
     if (!session) throw new Error(`No session found for agent ${agentId}`);
