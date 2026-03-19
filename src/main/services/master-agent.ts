@@ -7,6 +7,7 @@ import { log } from '@main/utils/log';
 import type { AgentLifecycleService } from './agent-lifecycle';
 import type { AgentRegistry } from './agent-registry';
 import type { ConnectorEngine } from '@main/connectors/engine';
+import type { AgentStore } from '@main/db/agent-store';
 import type { AgentMessage } from '@shared/types';
 
 const MAX_MESSAGES = 1000;
@@ -15,13 +16,24 @@ export class MasterAgentService extends EventEmitter {
   private lifecycle: AgentLifecycleService;
   private registry: AgentRegistry;
   private connectorEngine?: ConnectorEngine;
+  private store?: AgentStore;
   private messages: AgentMessage[] = [];
 
-  constructor(lifecycle: AgentLifecycleService, registry: AgentRegistry, connectorEngine?: ConnectorEngine) {
+  constructor(lifecycle: AgentLifecycleService, registry: AgentRegistry, connectorEngine?: ConnectorEngine, store?: AgentStore) {
     super();
     this.lifecycle = lifecycle;
     this.registry = registry;
     this.connectorEngine = connectorEngine;
+    this.store = store;
+
+    if (this.store) {
+      const persisted = this.store.getMessages(MAX_MESSAGES);
+      // Messages come back in desc order from DB, reverse for chronological
+      this.messages = persisted.reverse();
+      if (this.messages.length > 0) {
+        log('MasterAgent', `Loaded ${this.messages.length} message(s) from DB`);
+      }
+    }
   }
 
   async routeTask(agentId: string, task: string): Promise<void> {
@@ -92,6 +104,7 @@ export class MasterAgentService extends EventEmitter {
     if (this.messages.length > MAX_MESSAGES) {
       this.messages = this.messages.slice(-MAX_MESSAGES);
     }
+    this.store?.insertMessage(message);
     this.emit('message', message);
   }
 }

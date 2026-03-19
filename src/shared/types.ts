@@ -341,6 +341,20 @@ export interface AgentMessage {
   direction: 'inbound' | 'outbound';
 }
 
+export type AgentTaskStatus = 'pending' | 'in_progress' | 'completed';
+
+export interface AgentTask {
+  id: string;
+  title: string;
+  status: AgentTaskStatus;
+  assignedTo?: string;
+  blockedBy?: string[];
+  createdBy: string;
+  createdAt: number;
+  completedAt?: number;
+  result?: string;
+}
+
 // --- Slack Chat Types ---
 
 export interface SlackChatMessage {

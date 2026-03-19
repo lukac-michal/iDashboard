@@ -6,8 +6,11 @@
 import Database from 'better-sqlite3';
 import { drizzle, BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema';
+import * as agentSchema from './agent-store';
 
-export type DB = BetterSQLite3Database<typeof schema>;
+const allSchema = { ...schema, ...agentSchema };
+
+export type DB = BetterSQLite3Database<typeof allSchema>;
 
 export function createDatabase(dbPath: string): { db: DB; sqlite: Database.Database } {
   const sqlite = new Database(dbPath);
@@ -83,8 +86,44 @@ export function createDatabase(dbPath: string): { db: DB; sqlite: Database.Datab
       updated_at INTEGER NOT NULL,
       expires_at INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS agents (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'online',
+      profile_path TEXT,
+      session_name TEXT,
+      registered_at INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL,
+      report_status TEXT,
+      short_summary TEXT,
+      last_report_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_messages (
+      id TEXT PRIMARY KEY,
+      from_agent TEXT NOT NULL,
+      to_agent TEXT NOT NULL,
+      body TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      direction TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_messages_timestamp ON agent_messages(timestamp);
+
+    CREATE TABLE IF NOT EXISTS agent_tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      assigned_to TEXT,
+      blocked_by TEXT,
+      created_by TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      result TEXT
+    );
   `);
 
-  const db = drizzle(sqlite, { schema });
+  const db = drizzle(sqlite, { schema: allSchema });
   return { db, sqlite };
 }

@@ -4,19 +4,35 @@
 
 import { EventEmitter } from 'node:events';
 import { log } from '@main/utils/log';
+import type { AgentStore } from '@main/db/agent-store';
 import type { AgentInfo, AgentStatus, AgentReportStatus } from '@shared/types';
 
 export class AgentRegistry extends EventEmitter {
   private agents = new Map<string, AgentInfo>();
   private staleThresholdMs: number;
+  private store?: AgentStore;
 
-  constructor(staleThresholdMs = 30000) {
+  constructor(staleThresholdMs = 30000, store?: AgentStore) {
     super();
     this.staleThresholdMs = staleThresholdMs;
+    this.store = store;
+
+    if (this.store) {
+      const persisted = this.store.getAllAgents();
+      for (const agent of persisted) {
+        agent.status = 'stale';
+        this.agents.set(agent.id, agent);
+      }
+      if (persisted.length > 0) {
+        log('AgentRegistry', `Loaded ${persisted.length} agent(s) from DB (marked stale)`);
+      }
+    }
   }
 
   register(info: AgentInfo): void {
-    this.agents.set(info.id, { ...info, registeredAt: Date.now(), lastSeenAt: Date.now() });
+    const agent = { ...info, registeredAt: Date.now(), lastSeenAt: Date.now() };
+    this.agents.set(info.id, agent);
+    this.store?.upsertAgent(agent);
     log('AgentRegistry', `Registered agent: ${info.id} (${info.name})`);
     this.emit('agent:registered', this.agents.get(info.id));
   }
@@ -25,6 +41,7 @@ export class AgentRegistry extends EventEmitter {
     const agent = this.agents.get(agentId);
     if (!agent) return false;
     this.agents.delete(agentId);
+    this.store?.deleteAgent(agentId);
     log('AgentRegistry', `Unregistered agent: ${agentId}`);
     this.emit('agent:unregistered', agent);
     return true;
@@ -35,6 +52,7 @@ export class AgentRegistry extends EventEmitter {
     if (!agent) return false;
     agent.status = status;
     agent.lastSeenAt = Date.now();
+    this.store?.upsertAgent(agent);
     this.emit('agent:updated', agent);
     return true;
   }
@@ -47,6 +65,7 @@ export class AgentRegistry extends EventEmitter {
       agent.status = 'online';
       this.emit('agent:updated', agent);
     }
+    this.store?.upsertAgent(agent);
     return true;
   }
 
@@ -73,6 +92,7 @@ export class AgentRegistry extends EventEmitter {
     agent.shortSummary = shortSummary;
     agent.lastReportAt = Date.now();
     agent.lastSeenAt = Date.now();
+    this.store?.upsertAgent(agent);
     this.emit('agent:updated', agent);
     return true;
   }
