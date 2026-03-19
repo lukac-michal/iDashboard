@@ -36,6 +36,10 @@ import { AgentRegistry } from './services/agent-registry';
 import { createTerminalAdapter } from './services/terminal-factory';
 import { AgentLifecycleService } from './services/agent-lifecycle';
 import { MasterAgentService } from './services/master-agent';
+import { TaskManager } from './services/task-manager';
+import { AgentStore } from './db/agent-store';
+import { registerTaskRoutes } from './api/routes/tasks';
+import { registerMessageRoutes } from './api/routes/messages';
 import { SlackBridgeService } from './services/slack-bridge';
 import { SlackChannelLogger } from './services/slack-channel-logger';
 import { log, warn, error as logError, setLogCollector } from './utils/log';
@@ -59,6 +63,7 @@ let logCollector: LogCollector;
 let agentRegistry: AgentRegistry | undefined;
 let agentLifecycle: AgentLifecycleService | undefined;
 let masterAgent: MasterAgentService | undefined;
+let taskManager: TaskManager | undefined;
 let pmAgentId: string | undefined;
 let slackBridge: SlackBridgeService | undefined;
 let slackChannelLogger: SlackChannelLogger | undefined;
@@ -368,7 +373,14 @@ async function bootstrap(): Promise<void> {
       config.experimental.repoPath || process.cwd(),
       config.api.port,
     );
-    masterAgent = new MasterAgentService(agentLifecycle, agentRegistry, connectorEngine);
+    const agentStore = new AgentStore(db);
+    masterAgent = new MasterAgentService(agentLifecycle, agentRegistry, connectorEngine, agentStore);
+    taskManager = new TaskManager(agentStore);
+
+    // Push task updates to renderer
+    taskManager.on('task:created', () => pushToRenderer(mainWindow, IPC.TASKS_STREAM, taskManager!.getTasks()));
+    taskManager.on('task:updated', () => pushToRenderer(mainWindow, IPC.TASKS_STREAM, taskManager!.getTasks()));
+    taskManager.on('task:completed', () => pushToRenderer(mainWindow, IPC.TASKS_STREAM, taskManager!.getTasks()));
 
     // Push agent updates to renderer
     agentRegistry.on('agent:registered', () => {
@@ -406,6 +418,7 @@ async function bootstrap(): Promise<void> {
     agentRegistry,
     agentLifecycle,
     masterAgent,
+    taskManager,
     getConfig: () => config,
     updateConfig: async (partial) => {
       // Deep-merge one level: spread nested objects instead of replacing them
@@ -490,6 +503,14 @@ async function bootstrap(): Promise<void> {
       soundService.play(windowManager.getWindow());
     },
   });
+  // Register task and message routes if experimental mode is active
+  if (taskManager) {
+    registerTaskRoutes(apiServer, taskManager);
+  }
+  if (masterAgent) {
+    registerMessageRoutes(apiServer, masterAgent);
+  }
+
   await startAPIServer(apiServer, config.api.port, config.api.bind);
 
   // --- Deferred PM Agent Auto-Spawn (non-blocking so it doesn't delay IPC) ---

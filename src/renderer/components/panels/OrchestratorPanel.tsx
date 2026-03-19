@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useDashboardStore } from '@renderer/store/dashboard';
 import { Modal } from '@renderer/components/common/Modal';
-import type { AgentInfo, AgentMessage, AgentStatus, AgentReportStatus, ProfileOption } from '@shared/types';
+import type { AgentInfo, AgentMessage, AgentTask, AgentStatus, AgentReportStatus, ProfileOption } from '@shared/types';
 
 const STATUS_COLORS: Record<AgentStatus, string> = {
   online: 'bg-green-400',
@@ -200,6 +200,88 @@ function SpawnAgentForm() {
   );
 }
 
+function TaskBoard() {
+  const [tasks, setTasks] = useState<AgentTask[]>([]);
+  const [newTitle, setNewTitle] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    window.iDashboard?.getTasks?.().then((t: AgentTask[]) => setTasks(t ?? []));
+    const unsub = window.iDashboard?.onTasksChanged?.((t: unknown) => setTasks((t as AgentTask[]) ?? []));
+    return () => { unsub?.(); };
+  }, []);
+
+  const handleCreate = async () => {
+    if (!newTitle.trim()) return;
+    setCreating(true);
+    try {
+      const result = await window.iDashboard?.createTask({ title: newTitle.trim(), createdBy: 'user' }) as { ok: boolean; task?: AgentTask };
+      if (result?.ok && result.task) {
+        setTasks(prev => [result.task!, ...prev]);
+        setNewTitle('');
+      }
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const pending = tasks.filter(t => t.status === 'pending');
+  const inProgress = tasks.filter(t => t.status === 'in_progress');
+  const completed = tasks.filter(t => t.status === 'completed');
+
+  if (tasks.length === 0 && !newTitle) return null;
+
+  return (
+    <div className="border-b border-gray-800/50 p-3">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-xs font-medium text-gray-400">Tasks</span>
+        <input
+          value={newTitle}
+          onChange={e => setNewTitle(e.target.value)}
+          placeholder="New task..."
+          className="settings-input flex-1 text-xs"
+          onKeyDown={e => { if (e.key === 'Enter') handleCreate(); }}
+        />
+        <button
+          onClick={handleCreate}
+          disabled={!newTitle.trim() || creating}
+          className="px-2 py-1 text-[10px] bg-indigo-600 text-white rounded hover:bg-indigo-500 disabled:opacity-40"
+        >
+          Add
+        </button>
+      </div>
+      {tasks.length > 0 && (
+        <div className="grid grid-cols-3 gap-2 text-[10px]">
+          <div>
+            <div className="text-gray-500 mb-1">Pending ({pending.length})</div>
+            {pending.map(t => (
+              <div key={t.id} className="bg-gray-800/40 rounded px-2 py-1 mb-1 text-gray-300 truncate" title={t.title}>
+                {t.title}
+              </div>
+            ))}
+          </div>
+          <div>
+            <div className="text-yellow-500 mb-1">In Progress ({inProgress.length})</div>
+            {inProgress.map(t => (
+              <div key={t.id} className="bg-yellow-900/20 border border-yellow-800/30 rounded px-2 py-1 mb-1 text-gray-300 truncate" title={`${t.title} (${t.assignedTo ?? 'unassigned'})`}>
+                {t.title}
+              </div>
+            ))}
+          </div>
+          <div>
+            <div className="text-green-500 mb-1">Done ({completed.length})</div>
+            {completed.slice(0, 5).map(t => (
+              <div key={t.id} className="bg-green-900/20 rounded px-2 py-1 mb-1 text-gray-500 truncate line-through" title={t.title}>
+                {t.title}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SlackChatSection() {
   const slackChannels = useDashboardStore(s => s.slackChannels);
   const addAgentMessage = useDashboardStore(s => s.addAgentMessage);
@@ -366,6 +448,9 @@ export function OrchestratorPanel() {
           </div>
         )}
       </div>
+
+      {/* Task board */}
+      <TaskBoard />
 
       {/* Slack chat */}
       <SlackChatSection />

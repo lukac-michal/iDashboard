@@ -95,6 +95,45 @@ export class MasterAgentService extends EventEmitter {
     this.addMessage(message);
   }
 
+  async sendMessage(from: string, to: string, body: string): Promise<AgentMessage> {
+    log('MasterAgent', `Message from ${from} to ${to}: ${body.slice(0, 80)}...`);
+
+    const message: AgentMessage = {
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      from,
+      to,
+      body,
+      timestamp: Date.now(),
+      direction: 'outbound',
+    };
+
+    // Try to deliver to target agent's terminal
+    const targetAgent = this.registry.findByName(to);
+    if (targetAgent) {
+      try {
+        await this.lifecycle.sendTextToAgent(targetAgent.id, `[Message from ${from}]: ${body}`);
+      } catch {
+        // Agent may not have a session - still record message
+      }
+    }
+
+    this.addMessage(message);
+    return message;
+  }
+
+  getMessagesForAgent(agentName: string): AgentMessage[] {
+    return this.messages.filter(m => m.from === agentName || m.to === agentName);
+  }
+
+  async broadcastMessage(from: string, body: string): Promise<void> {
+    const agents = this.registry.getAll().filter(a => a.status !== 'offline');
+    for (const agent of agents) {
+      if (agent.name !== from) {
+        await this.sendMessage(from, agent.name, body);
+      }
+    }
+  }
+
   getMessages(): AgentMessage[] {
     return [...this.messages];
   }

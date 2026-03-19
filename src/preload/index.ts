@@ -86,6 +86,12 @@ const api = {
     ipcRenderer.invoke(IPC.MASTER_ROUTE_TASK, { agentId, task }),
   getMasterMessages: () => ipcRenderer.invoke(IPC.MASTER_MESSAGES),
 
+  // Tasks
+  getTasks: (filter?: unknown) => ipcRenderer.invoke(IPC.TASKS_LIST, filter),
+  createTask: (opts: unknown) => ipcRenderer.invoke(IPC.TASKS_CREATE, opts),
+  updateTask: (taskId: string, updates: unknown) =>
+    ipcRenderer.invoke(IPC.TASKS_UPDATE, { taskId, updates }),
+
   // Profiles
   getProfiles: () => ipcRenderer.invoke(IPC.PROFILES_LIST),
 
@@ -136,6 +142,12 @@ const api = {
     const handler = (_: unknown, data: unknown) => callback(data);
     ipcRenderer.on(IPC.AGENT_MESSAGES_STREAM, handler);
     return () => ipcRenderer.removeListener(IPC.AGENT_MESSAGES_STREAM, handler);
+  },
+
+  onTasksChanged: (callback: (tasks: unknown) => void) => {
+    const handler = (_: unknown, data: unknown) => callback(data);
+    ipcRenderer.on(IPC.TASKS_STREAM, handler);
+    return () => ipcRenderer.removeListener(IPC.TASKS_STREAM, handler);
   },
 };
 

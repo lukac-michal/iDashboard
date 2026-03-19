@@ -93,6 +93,12 @@ export const IPC = {
   MASTER_ROUTE_TASK: 'master:route-task',
   MASTER_MESSAGES: 'master:messages',
 
+  // Tasks
+  TASKS_LIST: 'tasks:list',
+  TASKS_CREATE: 'tasks:create',
+  TASKS_UPDATE: 'tasks:update',
+  TASKS_STREAM: 'tasks:stream', // main → renderer push
+
   // Connector force poll
   CONNECTORS_FORCE_POLL: 'connectors:force-poll',
 

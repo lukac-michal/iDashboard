@@ -22,6 +22,7 @@ import type { LogCollector } from '@main/services/log-collector';
 import type { AgentRegistry } from '@main/services/agent-registry';
 import type { AgentLifecycleService } from '@main/services/agent-lifecycle';
 import type { MasterAgentService } from '@main/services/master-agent';
+import type { TaskManager } from '@main/services/task-manager';
 import { SlackConnector } from '@main/connectors/slack';
 import type {
   AppConfig,
@@ -56,6 +57,7 @@ export interface IPCContext {
   agentRegistry?: AgentRegistry;
   agentLifecycle?: AgentLifecycleService;
   masterAgent?: MasterAgentService;
+  taskManager?: TaskManager;
 }
 
 export function registerIPCHandlers(ctx: IPCContext): void {
@@ -327,6 +329,34 @@ export function registerIPCHandlers(ctx: IPCContext): void {
 
   ipcMain.handle(IPC.MASTER_MESSAGES, () => {
     return ctx.masterAgent?.getMessages() ?? [];
+  });
+
+  // --- Tasks ---
+
+  ipcMain.handle(IPC.TASKS_LIST, (_event, filter?: { status?: string; assignedTo?: string }) => {
+    return ctx.taskManager?.getTasks(filter as { status?: import('@shared/types').AgentTaskStatus; assignedTo?: string } | undefined) ?? [];
+  });
+
+  ipcMain.handle(IPC.TASKS_CREATE, (_event, { title, createdBy, assignTo, blockedBy }: {
+    title: string; createdBy: string; assignTo?: string; blockedBy?: string[];
+  }) => {
+    if (!ctx.taskManager) return { ok: false, error: 'Experimental mode not enabled' };
+    const task = ctx.taskManager.createTask(title, createdBy, assignTo, blockedBy);
+    return { ok: true, task };
+  });
+
+  ipcMain.handle(IPC.TASKS_UPDATE, (_event, { taskId, updates }: { taskId: string; updates: Record<string, unknown> }) => {
+    if (!ctx.taskManager) return { ok: false, error: 'Experimental mode not enabled' };
+    if (updates.status === 'in_progress' && updates.assignedTo) {
+      const task = ctx.taskManager.claimTask(taskId, updates.assignedTo as string);
+      return task ? { ok: true, task } : { ok: false, error: 'Cannot claim task' };
+    }
+    if (updates.status === 'completed') {
+      const task = ctx.taskManager.completeTask(taskId, updates.result as string | undefined);
+      return task ? { ok: true, task } : { ok: false, error: 'Task not found' };
+    }
+    const task = ctx.taskManager.updateTask(taskId, updates);
+    return task ? { ok: true, task } : { ok: false, error: 'Task not found' };
   });
 
   // --- Profiles ---
