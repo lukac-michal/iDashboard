@@ -14,6 +14,7 @@ import { registerWebhookRoutes } from './routes/webhooks';
 import { registerHealthRoutes } from './routes/health';
 import { registerSlackDebugRoutes } from './routes/slack-debug';
 import { registerAgentReportRoutes } from './routes/agent-reports';
+import { registerAgentListRoutes } from './routes/agents';
 import { registerWebSocket } from './websocket';
 import type { ConnectorEngine } from '@main/connectors/engine';
 import type { EventStore } from '@main/db/event-store';
@@ -80,6 +81,7 @@ export async function createAPIServer(ctx: APIContext): Promise<FastifyInstance>
   registerWebhookRoutes(server, ctx);
   registerHealthRoutes(server, ctx);
   registerAgentReportRoutes(server, ctx);
+  registerAgentListRoutes(server, ctx);
   registerSlackDebugRoutes(server, ctx);
   registerWebSocket(server, ctx);
 

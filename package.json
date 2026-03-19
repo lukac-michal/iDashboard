@@ -15,11 +15,13 @@
     "package": "electron-builder",
     "package:mac": "electron-vite build && electron-builder --mac --dir",
     "install:mac": "electron-vite build && electron-builder --mac --dir && cp -R release/mac-arm64/iDashboard.app /Applications/iDashboard.app",
+    "build:mcp": "npx esbuild src/main/mcp/server.ts --bundle --platform=node --target=node18 --outfile=dist/mcp-server.js --format=esm --banner:js='#!/usr/bin/env node'",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
     "@fastify/websocket": "^11.0.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "better-sqlite3": "^11.8.0",
     "drizzle-orm": "^0.38.0",
     "electron-store": "^10.0.0",
