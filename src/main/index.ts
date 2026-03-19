@@ -277,7 +277,7 @@ async function bootstrap(): Promise<void> {
 
   // --- Slack Bridge ---
   if (config.slackBridge?.enabled && config.slackBridge.targetChannel) {
-    const bridgeTerminal = config.slackBridge.reverseEnabled ? createTerminalAdapter() : null;
+    const bridgeTerminal = config.slackBridge.reverseEnabled ? await createTerminalAdapter() : null;
     slackBridge = new SlackBridgeService(connectorEngine, config.slackBridge, bridgeTerminal, slackChannelLogger);
     log('Main', `Slack Bridge enabled → ${config.slackBridge.targetChannel}${config.slackBridge.reverseEnabled ? ' (bidirectional)' : ''}`);
   }
@@ -361,7 +361,7 @@ async function bootstrap(): Promise<void> {
   if (config.experimental?.enabled) {
     log('Main', 'Experimental mode enabled — initializing agent orchestration');
     agentRegistry = new AgentRegistry(config.experimental.healthCheckIntervalMs * 3);
-    const terminalAdapter = createTerminalAdapter();
+    const terminalAdapter = await createTerminalAdapter();
     agentLifecycle = new AgentLifecycleService(
       agentRegistry,
       terminalAdapter,
@@ -406,7 +406,7 @@ async function bootstrap(): Promise<void> {
     agentLifecycle,
     masterAgent,
     getConfig: () => config,
-    updateConfig: (partial) => {
+    updateConfig: async (partial) => {
       // Deep-merge one level: spread nested objects instead of replacing them
       const merged: Record<string, unknown> = { ...config };
       for (const [key, value] of Object.entries(partial)) {
@@ -424,7 +424,7 @@ async function bootstrap(): Promise<void> {
         if (slackBridge) {
           slackBridge.updateConfig(config.slackBridge);
         } else if (config.slackBridge?.enabled && config.slackBridge.targetChannel) {
-          const bridgeTerminal = config.slackBridge.reverseEnabled ? createTerminalAdapter() : null;
+          const bridgeTerminal = config.slackBridge.reverseEnabled ? await createTerminalAdapter() : null;
           slackBridge = new SlackBridgeService(connectorEngine, config.slackBridge, bridgeTerminal, slackChannelLogger);
           log('Main', `Slack Bridge enabled via settings → ${config.slackBridge.targetChannel}`);
         }

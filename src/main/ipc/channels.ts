@@ -49,7 +49,7 @@ export interface IPCContext {
   rulesEngine: RulesEngine;
   logCollector: LogCollector;
   getConfig: () => AppConfig;
-  updateConfig: (partial: Partial<AppConfig>) => void;
+  updateConfig: (partial: Partial<AppConfig>) => void | Promise<void>;
   addConnector: (config: ConnectorConfig) => Promise<void>;
   updateConnector: (config: ConnectorConfig) => Promise<void>;
   removeConnector: (id: string) => Promise<void>;

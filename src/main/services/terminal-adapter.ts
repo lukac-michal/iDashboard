@@ -8,6 +8,8 @@ export interface TerminalSession {
   tabId: number;
   /** iTerm2 unique session identifier (e.g. "w0t3p0:UUID") */
   sessionId?: string;
+  /** Process ID for PTY-backed sessions */
+  pid?: number;
 }
 
 export interface TerminalAdapter {
@@ -18,4 +20,9 @@ export interface TerminalAdapter {
   createTab(opts: { name?: string; cwd?: string; command?: string }): Promise<TerminalSession>;
   writeText(session: TerminalSession, text: string): Promise<void>;
   activate(): Promise<void>;
+
+  // Optional methods for PTY-backed adapters
+  terminate?(session: TerminalSession): Promise<void>;
+  onOutput?(session: TerminalSession, callback: (data: string) => void): void;
+  getPid?(session: TerminalSession): number | undefined;
 }

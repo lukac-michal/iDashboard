@@ -4,12 +4,28 @@
 
 import type { TerminalAdapter } from './terminal-adapter';
 import { ITerm2Adapter } from './iterm2-adapter';
+import { PtyAdapter } from './pty-adapter';
 
-export function createTerminalAdapter(): TerminalAdapter {
-  if (process.platform === 'darwin') {
+export type TerminalAdapterType = 'pty' | 'iterm2' | 'auto';
+
+export async function createTerminalAdapter(type: TerminalAdapterType = 'auto'): Promise<TerminalAdapter> {
+  if (type === 'iterm2' && process.platform === 'darwin') {
     return new ITerm2Adapter();
   }
-  // Non-macOS: return a no-op adapter
+
+  if (type === 'pty' || type === 'auto') {
+    const pty = new PtyAdapter();
+    await pty.init();
+    if (await pty.isRunning()) {
+      return pty;
+    }
+    // Fallback: on macOS try iTerm2, otherwise no-op
+    if (process.platform === 'darwin') {
+      return new ITerm2Adapter();
+    }
+  }
+
+  // No-op adapter as last resort
   return {
     isRunning: async () => false,
     listSessions: async () => [],
