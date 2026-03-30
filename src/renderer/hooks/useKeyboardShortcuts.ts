@@ -7,6 +7,8 @@ import { useDashboardStore } from '@renderer/store/dashboard';
 
 export function useKeyboardShortcuts() {
   const setActivePanel = useDashboardStore(s => s.setActivePanel);
+  const toggleCommandPalette = useDashboardStore(s => s.toggleCommandPalette);
+  const setCommandPaletteOpen = useDashboardStore(s => s.setCommandPaletteOpen);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -19,10 +21,10 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Ctrl+K → Search / History
+      // Ctrl+K → Toggle command palette
       if (ctrl && e.key === 'k') {
         e.preventDefault();
-        setActivePanel('history');
+        toggleCommandPalette();
         return;
       }
 
@@ -39,8 +41,13 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Escape → exit fullscreen/maximized first, then navigate to dashboard
+      // Escape → close command palette first, then exit fullscreen, then navigate to dashboard
       if (e.key === 'Escape') {
+        const paletteOpen = useDashboardStore.getState().commandPaletteOpen;
+        if (paletteOpen) {
+          setCommandPaletteOpen(false);
+          return;
+        }
         // Always try to exit fullscreen/maximized state
         window.iDashboard?.setWindowMode('floating');
         const currentPanel = useDashboardStore.getState().activePanel;
@@ -60,5 +67,5 @@ export function useKeyboardShortcuts() {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [setActivePanel]);
+  }, [setActivePanel, toggleCommandPalette, setCommandPaletteOpen]);
 }

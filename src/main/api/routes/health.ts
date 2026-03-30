@@ -113,4 +113,17 @@ export function registerHealthRoutes(server: FastifyInstance, ctx: APIContext): 
     const removed = ctx.agentRegistry.unregister(id);
     return reply.send({ ok: removed });
   });
+
+  // Spawn a new agent
+  server.post(`${API_PREFIX}/agents/spawn`, async (request, reply) => {
+    if (!ctx.agentLifecycle) return reply.code(503).send({ ok: false, error: 'Experimental mode not enabled' });
+    const { name, profilePath } = request.body as { name: string; profilePath?: string };
+    if (!name) return reply.code(400).send({ ok: false, error: 'name is required' });
+    try {
+      const agent = await ctx.agentLifecycle.spawnAgent({ name, profilePath });
+      return reply.send({ ok: true, agent });
+    } catch (e) {
+      return reply.code(500).send({ ok: false, error: (e as Error).message });
+    }
+  });
 }

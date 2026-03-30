@@ -19,6 +19,7 @@ import { SettingsPanel } from '@renderer/components/panels/SettingsPanel';
 import { LogsPanel } from '@renderer/components/panels/LogsPanel';
 import { OrchestratorPanel } from '@renderer/components/panels/OrchestratorPanel';
 import { SlackPanel } from '@renderer/components/panels/SlackPanel';
+import { CommandPalette } from '@renderer/components/common/CommandPalette';
 import { useDashboardStore } from '@renderer/store/dashboard';
 
 export default function App() {
@@ -30,6 +31,7 @@ export default function App() {
   const windowWidth = useDashboardStore(s => s.windowWidth);
   const gridEditMode = useDashboardStore(s => s.gridEditMode);
   const isMinimal = useDashboardStore(s => s.uiStyle === 'minimal');
+  const commandPaletteOpen = useDashboardStore(s => s.commandPaletteOpen);
 
   // Use grid layout in fullscreen/expanded modes when edit mode is on
   const useGridLayout = gridEditMode && windowWidth >= 600;
@@ -73,6 +75,7 @@ export default function App() {
         )}
       </main>
       {!isMinimal && <NavigationBar />}
+      {commandPaletteOpen && <CommandPalette />}
     </div>
   );
 }

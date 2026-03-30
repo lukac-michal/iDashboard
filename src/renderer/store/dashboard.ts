@@ -86,6 +86,9 @@ interface DashboardState {
   // Active connector tab (null = "All" view)
   activeConnectorTab: string | null;
 
+  // Command palette
+  commandPaletteOpen: boolean;
+
   // Actions
   pushEvent: (event: ConnectorEvent) => void;
   dismissEvent: (eventId: string) => void;
@@ -114,6 +117,8 @@ interface DashboardState {
   updateSlackMessage: (id: string, update: Partial<SlackChatMessage>) => void;
   setSelectedSlackChannel: (channel: string | null) => void;
   setActiveConnectorTab: (tab: string | null) => void;
+  toggleCommandPalette: () => void;
+  setCommandPaletteOpen: (open: boolean) => void;
 }
 
 export const useDashboardStore = create<DashboardState>((set, get) => ({
@@ -146,6 +151,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   acknowledgedEvents: new Set(),
   eventCounter: 0,
   activeConnectorTab: null,
+  commandPaletteOpen: false,
 
   pushEvent: (event) => {
     set((state) => {
@@ -245,4 +251,6 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   })),
   setSelectedSlackChannel: (selectedSlackChannel) => set({ selectedSlackChannel }),
   setActiveConnectorTab: (activeConnectorTab) => set({ activeConnectorTab }),
+  toggleCommandPalette: () => set((state) => ({ commandPaletteOpen: !state.commandPaletteOpen })),
+  setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
 }));
