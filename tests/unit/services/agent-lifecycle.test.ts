@@ -180,4 +180,111 @@ describe('AgentLifecycleService', () => {
   it('findAgentByTerminalId returns undefined for empty input', () => {
     expect(lifecycle.findAgentByTerminalId('')).toBeUndefined();
   });
+
+  // --- terminateAgent ---
+
+  it('terminateAgent unregisters agent and removes session', async () => {
+    const agent = await lifecycle.spawnAgent({ name: 'worker' });
+    expect(registry.getAll()).toHaveLength(1);
+
+    await lifecycle.terminateAgent(agent.id);
+
+    expect(registry.getAll()).toHaveLength(0);
+    await expect(lifecycle.sendTextToAgent(agent.id, 'hi')).rejects.toThrow('No session found');
+  });
+
+  it('terminateAgent calls adapter.terminate when available', async () => {
+    const terminateFn = vi.fn().mockResolvedValue(undefined);
+    (adapter as Record<string, unknown>).terminate = terminateFn;
+
+    const agent = await lifecycle.spawnAgent({ name: 'worker' });
+    await lifecycle.terminateAgent(agent.id);
+
+    expect(terminateFn).toHaveBeenCalled();
+  });
+
+  it('terminateAgent for unknown agent just unregisters from registry', async () => {
+    registry.register({
+      id: 'orphan',
+      name: 'orphan',
+      status: 'offline',
+      registeredAt: Date.now(),
+      lastSeenAt: Date.now(),
+    });
+
+    await lifecycle.terminateAgent('orphan');
+    expect(registry.get('orphan')).toBeUndefined();
+  });
+
+  // --- recoverAgents ---
+
+  it('recoverAgents matches agents to sessions by name', async () => {
+    // Pre-populate registry (simulating DB load)
+    registry.register({
+      id: 'a1',
+      name: 'PM',
+      status: 'stale',
+      sessionName: 'PM',
+      registeredAt: Date.now(),
+      lastSeenAt: Date.now(),
+    });
+
+    (adapter.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { name: 'PM', windowId: 1, tabId: 1, sessionId: 'sess-1' },
+    ]);
+
+    await lifecycle.recoverAgents();
+
+    // Agent should be marked stale (awaiting heartbeat), not offline
+    expect(registry.get('a1')?.status).toBe('stale');
+    // Session should be mapped — sendText should work
+    await lifecycle.sendTextToAgent('a1', 'hello');
+    expect(adapter.writeText).toHaveBeenCalled();
+  });
+
+  it('recoverAgents removes agents with no matching session', async () => {
+    registry.register({
+      id: 'a1',
+      name: 'DeadAgent',
+      status: 'stale',
+      sessionName: 'DeadAgent',
+      registeredAt: Date.now(),
+      lastSeenAt: Date.now(),
+    });
+
+    (adapter.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    await lifecycle.recoverAgents();
+
+    expect(registry.get('a1')).toBeUndefined();
+    expect(registry.getAll()).toHaveLength(0);
+  });
+
+  it('recoverAgents removes all when terminal not running', async () => {
+    registry.register({
+      id: 'a1',
+      name: 'Agent1',
+      status: 'stale',
+      registeredAt: Date.now(),
+      lastSeenAt: Date.now(),
+    });
+    registry.register({
+      id: 'a2',
+      name: 'Agent2',
+      status: 'stale',
+      registeredAt: Date.now(),
+      lastSeenAt: Date.now(),
+    });
+
+    (adapter.isRunning as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+
+    await lifecycle.recoverAgents();
+
+    expect(registry.getAll()).toHaveLength(0);
+  });
+
+  it('recoverAgents is a no-op when registry is empty', async () => {
+    await lifecycle.recoverAgents();
+    expect(adapter.isRunning).not.toHaveBeenCalled();
+  });
 });

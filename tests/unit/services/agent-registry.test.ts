@@ -153,6 +153,27 @@ describe('AgentRegistry', () => {
     expect(registry.findByName('nope')).toBeUndefined();
   });
 
+  it('findByName prefers online agent over offline duplicate', () => {
+    registry.register(makeAgent('a1', 'PM'));
+    registry.updateStatus('a1', 'offline');
+    registry.register(makeAgent('a2', 'PM'));
+    // a2 is online, a1 is offline — should return a2
+    expect(registry.findByName('PM')?.id).toBe('a2');
+  });
+
+  it('findByName returns offline agent as fallback when no online match', () => {
+    registry.register(makeAgent('a1', 'PM'));
+    registry.updateStatus('a1', 'offline');
+    expect(registry.findByName('PM')?.id).toBe('a1');
+  });
+
+  it('findByName prefers online over stale', () => {
+    registry.register(makeAgent('a1', 'Worker'));
+    registry.updateStatus('a1', 'stale');
+    registry.register(makeAgent('a2', 'Worker'));
+    expect(registry.findByName('Worker')?.id).toBe('a2');
+  });
+
   // --- updateReport ---
 
   it('updateReport sets report fields and emits agent:updated', () => {
