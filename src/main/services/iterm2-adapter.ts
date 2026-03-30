@@ -31,6 +31,8 @@ function runAppleScript(script: string): Promise<string> {
 }
 
 export class ITerm2Adapter implements TerminalAdapter {
+  private agentWindowId: string | null = null;
+
   async isRunning(): Promise<boolean> {
     return new Promise((resolve) => {
       const script = 'tell application "System Events" to (name of every process) contains "iTerm2"';
@@ -118,24 +120,65 @@ end tell
     const cdCmd = opts.cwd ? `cd ${JSON.stringify(opts.cwd)} && ` : '';
     const fullCommand = opts.command ? `${cdCmd}${opts.command}` : (opts.cwd ? `cd ${JSON.stringify(opts.cwd)}` : '');
     const escapedCommand = fullCommand.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const escapedName = (opts.name ?? 'agent').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
     log('ITerm2Adapter', `Creating tab: command="${fullCommand}"`);
 
-    const result = await runAppleScript(`
+    // Use a dedicated "iDashboard Agents" window — create it on first spawn, reuse after
+    let result: string;
+    if (!this.agentWindowId) {
+      // Create a new window for the first agent
+      result = await runAppleScript(`
 tell application "iTerm2"
-  tell current window
-    set newTab to (create tab with default profile)
-    set newSession to current session of newTab
-    set escapedName to "${(opts.name ?? 'agent').replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"
-    tell newSession to set name to escapedName
-    ${escapedCommand ? `tell newSession to write text "${escapedCommand}"` : ''}
-    set sId to unique ID of newSession
-  end tell
-  return sId
+  set newWin to (create window with default profile)
+  set newSession to current session of current tab of newWin
+  tell newSession to set name to "${escapedName}"
+  ${escapedCommand ? `tell newSession to write text "${escapedCommand}"` : ''}
+  set sId to unique ID of newSession
+  return (id of newWin as text) & "|" & sId
 end tell
 `);
+      const parts = result.split('|');
+      this.agentWindowId = parts[0];
+      result = parts[1] || parts[0];
+      log('ITerm2Adapter', `Created agent window (id=${this.agentWindowId}), sessionId=${result}`);
+    } else {
+      // Create a new tab in the existing agent window
+      result = await runAppleScript(`
+tell application "iTerm2"
+  set agentWin to missing value
+  repeat with w in windows
+    if (id of w as text) is "${this.agentWindowId}" then
+      set agentWin to w
+      exit repeat
+    end if
+  end repeat
+  if agentWin is missing value then
+    -- Window was closed, create a new one
+    set agentWin to (create window with default profile)
+    set newSession to current session of current tab of agentWin
+    tell newSession to set name to "${escapedName}"
+    ${escapedCommand ? `tell newSession to write text "${escapedCommand}"` : ''}
+    set sId to unique ID of newSession
+    return (id of agentWin as text) & "|" & sId
+  else
+    tell agentWin
+      set newTab to (create tab with default profile)
+      set newSession to current session of newTab
+      tell newSession to set name to "${escapedName}"
+      ${escapedCommand ? `tell newSession to write text "${escapedCommand}"` : ''}
+      set sId to unique ID of newSession
+    end tell
+    return (id of agentWin as text) & "|" & sId
+  end if
+end tell
+`);
+      const parts = result.split('|');
+      this.agentWindowId = parts[0]; // Update in case window was recreated
+      result = parts[1] || parts[0];
+      log('ITerm2Adapter', `Created tab in agent window, sessionId=${result}`);
+    }
 
-    log('ITerm2Adapter', `Created tab, sessionId=${result}`);
     return {
       name: opts.name ?? 'new-tab',
       windowId: 0,
