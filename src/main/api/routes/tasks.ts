@@ -3,12 +3,13 @@
 // ============================================================
 
 import type { FastifyInstance } from 'fastify';
+import { API_PREFIX } from '@shared/constants';
 import type { TaskManager } from '@main/services/task-manager';
 import type { AgentTaskStatus } from '@shared/types';
 
 export function registerTaskRoutes(fastify: FastifyInstance, taskManager: TaskManager): void {
   // Create task
-  fastify.post('/api/v1/tasks', async (request, reply) => {
+  fastify.post(`${API_PREFIX}/tasks`, async (request, reply) => {
     const { title, createdBy, assignTo, blockedBy } = request.body as {
       title: string;
       createdBy: string;
@@ -23,13 +24,13 @@ export function registerTaskRoutes(fastify: FastifyInstance, taskManager: TaskMa
   });
 
   // List tasks
-  fastify.get('/api/v1/tasks', async (request) => {
+  fastify.get(`${API_PREFIX}/tasks`, async (request) => {
     const { status, assignedTo } = request.query as { status?: AgentTaskStatus; assignedTo?: string };
     return taskManager.getTasks(status || assignedTo ? { status, assignedTo } : undefined);
   });
 
   // Get single task
-  fastify.get('/api/v1/tasks/:id', async (request, reply) => {
+  fastify.get(`${API_PREFIX}/tasks/:id`, async (request, reply) => {
     const { id } = request.params as { id: string };
     const task = taskManager.getTask(id);
     if (!task) return reply.status(404).send({ ok: false, error: 'Task not found' });
@@ -37,7 +38,7 @@ export function registerTaskRoutes(fastify: FastifyInstance, taskManager: TaskMa
   });
 
   // Update task (claim, complete, reassign)
-  fastify.patch('/api/v1/tasks/:id', async (request, reply) => {
+  fastify.patch(`${API_PREFIX}/tasks/:id`, async (request, reply) => {
     const { id } = request.params as { id: string };
     const body = request.body as { status?: AgentTaskStatus; assignedTo?: string; result?: string };
 

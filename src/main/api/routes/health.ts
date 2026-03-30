@@ -105,4 +105,12 @@ export function registerHealthRoutes(server: FastifyInstance, ctx: APIContext): 
     const agents = ctx.agentRegistry?.getAll() ?? [];
     return reply.send({ ok: true, count: agents.length, agents });
   });
+
+  // Remove/unregister an agent
+  server.delete(`${API_PREFIX}/agents/:id`, async (request, reply) => {
+    if (!ctx.agentRegistry) return reply.code(503).send({ ok: false, error: 'Registry not available' });
+    const { id } = request.params as { id: string };
+    const removed = ctx.agentRegistry.unregister(id);
+    return reply.send({ ok: removed });
+  });
 }

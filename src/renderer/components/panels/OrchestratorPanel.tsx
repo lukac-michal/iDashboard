@@ -45,16 +45,14 @@ function AgentCard({ agent, onTerminate, confirmingTerminate }: { agent: AgentIn
       onClick={handleFocus}
       className={`flex-shrink-0 w-36 bg-gray-900/60 border rounded-lg p-3 hover:bg-gray-800/40 transition-colors text-left relative group ${confirmingTerminate ? 'border-red-500/70' : 'border-gray-800/50'}`}
     >
-      {/* Terminate button - top right, visible on hover */}
-      {agent.status !== 'offline' && (
-        <span
-          onClick={handleTerminate}
-          className={`absolute top-1 right-1 w-4 h-4 flex items-center justify-center text-xs cursor-pointer transition-opacity ${confirmingTerminate ? 'text-red-400 opacity-100' : 'text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100'}`}
-          title={confirmingTerminate ? 'Click again to confirm' : 'Terminate agent'}
-        >
-          x
-        </span>
-      )}
+      {/* Remove/terminate button - top right, visible on hover */}
+      <span
+        onClick={handleTerminate}
+        className={`absolute top-1 right-1 w-4 h-4 flex items-center justify-center text-xs cursor-pointer transition-opacity ${confirmingTerminate ? 'text-red-400 opacity-100' : 'text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100'}`}
+        title={confirmingTerminate ? 'Click again to confirm' : agent.status === 'offline' ? 'Remove agent' : 'Terminate agent'}
+      >
+        x
+      </span>
       <div className="flex items-center gap-2 mb-1">
         <span className={`w-2 h-2 rounded-full ${STATUS_COLORS[agent.status]}`} />
         <span className="text-xs font-medium text-gray-200 truncate">{agent.name}</span>
@@ -200,13 +198,14 @@ function SpawnAgentForm() {
   );
 }
 
-function TaskBoard() {
+function TaskBoard({ agents }: { agents: AgentInfo[] }) {
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [newTitle, setNewTitle] = useState('');
+  const [assignTo, setAssignTo] = useState('');
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
-    window.iDashboard?.getTasks?.().then((t: AgentTask[]) => setTasks(t ?? []));
+    window.iDashboard?.getTasks?.().then((t: AgentTask[]) => setTasks(t ?? [])).catch(() => {});
     const unsub = window.iDashboard?.onTasksChanged?.((t: unknown) => setTasks((t as AgentTask[]) ?? []));
     return () => { unsub?.(); };
   }, []);
@@ -215,16 +214,21 @@ function TaskBoard() {
     if (!newTitle.trim()) return;
     setCreating(true);
     try {
-      const result = await window.iDashboard?.createTask({ title: newTitle.trim(), createdBy: 'user' }) as { ok: boolean; task?: AgentTask };
-      if (result?.ok && result.task) {
-        setTasks(prev => [result.task!, ...prev]);
+      const result = await window.iDashboard?.createTask({
+        title: newTitle.trim(),
+        createdBy: 'user',
+        assignTo: assignTo || undefined,
+      }) as { ok: boolean };
+      if (result?.ok) {
         setNewTitle('');
+        setAssignTo('');
       }
     } finally {
       setCreating(false);
     }
   };
 
+  const onlineAgents = agents.filter(a => a.status !== 'offline');
   const pending = tasks.filter(t => t.status === 'pending');
   const inProgress = tasks.filter(t => t.status === 'in_progress');
   const completed = tasks.filter(t => t.status === 'completed');
@@ -242,6 +246,16 @@ function TaskBoard() {
           className="settings-input flex-1 text-xs"
           onKeyDown={e => { if (e.key === 'Enter') handleCreate(); }}
         />
+        <select
+          value={assignTo}
+          onChange={e => setAssignTo(e.target.value)}
+          className="settings-select text-xs"
+        >
+          <option value="">Unassigned</option>
+          {onlineAgents.map(a => (
+            <option key={a.id} value={a.name}>{a.name}</option>
+          ))}
+        </select>
         <button
           onClick={handleCreate}
           disabled={!newTitle.trim() || creating}
@@ -257,6 +271,7 @@ function TaskBoard() {
             {pending.map(t => (
               <div key={t.id} className="bg-gray-800/40 rounded px-2 py-1 mb-1 text-gray-300 truncate" title={t.title}>
                 {t.title}
+                {t.assignedTo && <span className="text-gray-500 ml-1">({t.assignedTo})</span>}
               </div>
             ))}
           </div>
@@ -450,7 +465,7 @@ export function OrchestratorPanel() {
       </div>
 
       {/* Task board */}
-      <TaskBoard />
+      <TaskBoard agents={agents} />
 
       {/* Slack chat */}
       <SlackChatSection />

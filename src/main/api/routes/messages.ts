@@ -3,11 +3,12 @@
 // ============================================================
 
 import type { FastifyInstance } from 'fastify';
+import { API_PREFIX } from '@shared/constants';
 import type { MasterAgentService } from '@main/services/master-agent';
 
 export function registerMessageRoutes(fastify: FastifyInstance, masterAgent: MasterAgentService): void {
   // Send message
-  fastify.post('/api/v1/messages', async (request, reply) => {
+  fastify.post(`${API_PREFIX}/messages`, async (request, reply) => {
     const { from, to, body } = request.body as { from: string; to: string; body: string };
     if (!from || !to || !body) {
       return reply.status(400).send({ ok: false, error: 'from, to, and body are required' });
@@ -17,7 +18,7 @@ export function registerMessageRoutes(fastify: FastifyInstance, masterAgent: Mas
   });
 
   // List messages
-  fastify.get('/api/v1/messages', async (request) => {
+  fastify.get(`${API_PREFIX}/messages`, async (request) => {
     const { agent, limit } = request.query as { agent?: string; limit?: string };
     if (agent) {
       return masterAgent.getMessagesForAgent(agent);

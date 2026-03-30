@@ -13,15 +13,16 @@ export async function createTerminalAdapter(type: TerminalAdapterType = 'auto'):
     return new ITerm2Adapter();
   }
 
+  // On macOS, 'auto' prefers iTerm2 for visible agent tabs
+  if (type === 'auto' && process.platform === 'darwin') {
+    return new ITerm2Adapter();
+  }
+
   if (type === 'pty' || type === 'auto') {
     const pty = new PtyAdapter();
     await pty.init();
     if (await pty.isRunning()) {
       return pty;
-    }
-    // Fallback: on macOS try iTerm2, otherwise no-op
-    if (process.platform === 'darwin') {
-      return new ITerm2Adapter();
     }
   }
 

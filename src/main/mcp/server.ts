@@ -83,7 +83,8 @@ export async function handleListAgents(): Promise<{
       content: [{ type: 'text', text: 'Failed to list agents (endpoint may not be available)' }],
     };
   }
-  const agents = (await response.json()) as Array<Record<string, unknown>>;
+  const data = (await response.json()) as Record<string, unknown>;
+  const agents = (data.agents ?? data) as Array<Record<string, unknown>>;
   const text =
     Array.isArray(agents) && agents.length > 0
       ? agents

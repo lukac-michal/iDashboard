@@ -43,7 +43,7 @@ import { registerMessageRoutes } from './api/routes/messages';
 import { SlackBridgeService } from './services/slack-bridge';
 import { SlackChannelLogger } from './services/slack-channel-logger';
 import { log, warn, error as logError, setLogCollector } from './utils/log';
-import type { ConnectorEvent, AppConfig, ConnectorConfig } from '@shared/types';
+import type { ConnectorEvent, AppConfig, ConnectorConfig, AgentTask } from '@shared/types';
 
 // Singleton instances
 let config: AppConfig;
@@ -301,12 +301,10 @@ async function bootstrap(): Promise<void> {
   windowManager = new WindowManager(config.window, preloadPath);
   const mainWindow = windowManager.createWindow();
 
-  // Load renderer
-  if (process.env.ELECTRON_RENDERER_URL) {
-    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
-  } else {
-    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
-  }
+  // Renderer URL is loaded later — after IPC handlers are registered
+  // so the renderer can immediately call getConfig, getEvents, etc.
+  const rendererURL = process.env.ELECTRON_RENDERER_URL;
+  const rendererFile = path.join(__dirname, '../renderer/index.html');
 
   // Open DevTools with F12 (dev convenience)
   mainWindow.webContents.on('before-input-event', (_event, input) => {
@@ -365,7 +363,8 @@ async function bootstrap(): Promise<void> {
   // --- Experimental Mode: Agent Orchestration (sync init only, spawn is deferred) ---
   if (config.experimental?.enabled) {
     log('Main', 'Experimental mode enabled — initializing agent orchestration');
-    agentRegistry = new AgentRegistry(config.experimental.healthCheckIntervalMs * 3);
+    const agentStore = new AgentStore(db);
+    agentRegistry = new AgentRegistry(config.experimental.healthCheckIntervalMs * 3, agentStore);
     const terminalAdapter = await createTerminalAdapter();
     agentLifecycle = new AgentLifecycleService(
       agentRegistry,
@@ -373,14 +372,41 @@ async function bootstrap(): Promise<void> {
       config.experimental.repoPath || process.cwd(),
       config.api.port,
     );
-    const agentStore = new AgentStore(db);
     masterAgent = new MasterAgentService(agentLifecycle, agentRegistry, connectorEngine, agentStore);
     taskManager = new TaskManager(agentStore);
 
     // Push task updates to renderer
-    taskManager.on('task:created', () => pushToRenderer(mainWindow, IPC.TASKS_STREAM, taskManager!.getTasks()));
+    taskManager.on('task:created', (task: AgentTask) => {
+      pushToRenderer(mainWindow, IPC.TASKS_STREAM, taskManager!.getTasks());
+      // Auto-dispatch: if task is assigned to an agent, send it to their terminal
+      if (task.assignedTo && agentLifecycle) {
+        const agent = agentRegistry!.findByName(task.assignedTo);
+        if (agent) {
+          agentLifecycle.sendTextToAgent(agent.id, task.title).then(() => {
+            taskManager!.claimTask(task.id, task.assignedTo!);
+            log('TaskManager', `Auto-dispatched task ${task.id} to ${task.assignedTo}`);
+          }).catch((err) => {
+            warn('TaskManager', `Failed to dispatch task to ${task.assignedTo}: ${err}`);
+          });
+        }
+      }
+    });
     taskManager.on('task:updated', () => pushToRenderer(mainWindow, IPC.TASKS_STREAM, taskManager!.getTasks()));
-    taskManager.on('task:completed', () => pushToRenderer(mainWindow, IPC.TASKS_STREAM, taskManager!.getTasks()));
+    taskManager.on('task:completed', (task: AgentTask) => {
+      pushToRenderer(mainWindow, IPC.TASKS_STREAM, taskManager!.getTasks());
+      // Auto-report: notify PM agent when a task is completed
+      if (masterAgent && task.assignedTo) {
+        const pmAgent = agentRegistry!.findByName('ProjectManager');
+        if (pmAgent) {
+          const summary = task.result
+            ? `Task completed by ${task.assignedTo}: "${task.title}" - Result: ${task.result}`
+            : `Task completed by ${task.assignedTo}: "${task.title}"`;
+          masterAgent.routeTask(pmAgent.id, summary).catch((err) => {
+            warn('TaskManager', `Failed to notify PM of task completion: ${err}`);
+          });
+        }
+      }
+    });
 
     // Push agent updates to renderer
     agentRegistry.on('agent:registered', () => {
@@ -483,6 +509,13 @@ async function bootstrap(): Promise<void> {
       configLoader.saveConnectors(connectorConfigs);
     },
   });
+
+  // --- Load Renderer (IPC handlers now ready) ---
+  if (rendererURL) {
+    mainWindow.loadURL(rendererURL);
+  } else {
+    mainWindow.loadFile(rendererFile);
+  }
 
   // --- API Server ---
   const apiServer = await createAPIServer({

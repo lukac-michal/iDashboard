@@ -79,10 +79,15 @@ export class AgentRegistry extends EventEmitter {
 
   findByName(name: string): AgentInfo | undefined {
     const lower = name.toLowerCase();
+    let fallback: AgentInfo | undefined;
     for (const agent of this.agents.values()) {
-      if (agent.name.toLowerCase() === lower) return agent;
+      if (agent.name.toLowerCase() === lower) {
+        // Prefer online/busy/idle agents over offline/stale ones
+        if (agent.status !== 'offline' && agent.status !== 'stale') return agent;
+        if (!fallback) fallback = agent;
+      }
     }
-    return undefined;
+    return fallback;
   }
 
   updateReport(agentId: string, status: AgentReportStatus, shortSummary: string): boolean {
@@ -104,6 +109,7 @@ export class AgentRegistry extends EventEmitter {
       if (agent.status !== 'offline' && now - agent.lastSeenAt > this.staleThresholdMs) {
         agent.status = 'stale';
         staleIds.push(id);
+        this.store?.upsertAgent(agent);
         this.emit('agent:updated', agent);
       }
     }

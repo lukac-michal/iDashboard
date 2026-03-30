@@ -135,16 +135,7 @@ export class AgentLifecycleService {
     log('AgentLifecycle', `Recovering ${agents.length} agent(s) from previous session`);
 
     const running = await this.adapter.isRunning();
-    if (!running) {
-      // Terminal not running -- mark all as offline
-      for (const agent of agents) {
-        this.registry.updateStatus(agent.id, 'offline');
-      }
-      log('AgentLifecycle', 'Terminal not running, all agents marked offline');
-      return;
-    }
-
-    const sessions = await this.adapter.listSessions();
+    const sessions = running ? await this.adapter.listSessions() : [];
 
     for (const agent of agents) {
       // Try to find matching terminal session
@@ -157,8 +148,9 @@ export class AgentLifecycleService {
         this.registry.updateStatus(agent.id, 'stale'); // needs heartbeat to confirm
         log('AgentLifecycle', `Recovered session for agent ${agent.name}`);
       } else {
-        this.registry.updateStatus(agent.id, 'offline');
-        log('AgentLifecycle', `No session found for agent ${agent.name}, marked offline`);
+        // No matching session — remove from registry (dead agent from previous run)
+        this.registry.unregister(agent.id);
+        log('AgentLifecycle', `Removed stale agent ${agent.name} (no matching session)`);
       }
     }
   }
