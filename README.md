@@ -166,6 +166,13 @@ Base URL: `http://localhost:19280/api/v1`
 | `/events` | `GET` | List active events |
 | `/events/history` | `GET` | Query historical events |
 | `/connectors` | `GET` | Connector status and health |
+| `/agents` | `GET` | List registered agents |
+| `/agents/spawn` | `POST` | Spawn a new agent |
+| `/agents/:id` | `DELETE` | Remove an agent |
+| `/agent-report` | `POST` | Agent status report |
+| `/tasks` | `GET/POST` | List or create tasks |
+| `/tasks/:id` | `GET/PATCH` | Get or update a task |
+| `/messages` | `GET/POST` | List or send messages |
 
 ### Event Schema
 
@@ -182,11 +189,111 @@ Base URL: `http://localhost:19280/api/v1`
 Supported `event` types: `needs-input`, `task-complete`, or any custom string.
 Supported `severity` levels: `info`, `warning`, `error`, `critical`, `attention`.
 
+## Multi-Agent Orchestration (Experimental)
+
+iDashboard can coordinate a team of Claude Code agents working in parallel iTerm2 tabs. Enable via **Settings > Experimental**.
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────┐
+│  iDashboard (System-level orchestration)         │
+│  • Spawns agents in iTerm2 tabs                  │
+│  • Routes tasks and messages between agents      │
+│  • Persists state in SQLite (survives restarts)  │
+│  • Visual dashboard with real-time status        │
+│                                                   │
+│  ┌──────────────┐  ┌──────────────┐              │
+│  │ ProjectManager│  │  Architect   │              │
+│  │ (delegates)   │  │  (designs)   │              │
+│  └──────────────┘  └──────────────┘              │
+│  ┌──────────────┐  ┌──────────────┐              │
+│  │ Implementer  │  │  Reviewer    │              │
+│  │ (builds)     │  │  (reviews)   │              │
+│  └──────────────┘  └──────────────┘              │
+│                                                   │
+│  All agents communicate via REST API              │
+│  (report status, create tasks, send messages)     │
+└─────────────────────────────────────────────────┘
+```
+
+### Quick Start: Spawn a Team
+
+1. Enable experimental mode in Settings
+2. A **ProjectManager** agent auto-spawns
+3. Spawn specialists from the Orchestrator tab (Architect, Implementer, Reviewer)
+4. Create a task assigned to ProjectManager — it delegates sub-tasks to the team
+
+### Agent REST API
+
+Agents communicate via `http://localhost:19280/api/v1`:
+
+```bash
+# Spawn an agent
+curl -X POST localhost:19280/api/v1/agents/spawn \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Architect","profilePath":"~/.idashboard/profiles/architect.md"}'
+
+# Create a task assigned to an agent (auto-dispatched to their terminal)
+curl -X POST localhost:19280/api/v1/tasks \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"Design the auth system","createdBy":"user","assignTo":"Architect"}'
+
+# Agent reports status
+curl -X POST localhost:19280/api/v1/agent-report \
+  -H 'Content-Type: application/json' \
+  -d '{"agentName":"Architect","status":"done","shortSummary":"Auth design complete"}'
+
+# Send message between agents
+curl -X POST localhost:19280/api/v1/messages \
+  -H 'Content-Type: application/json' \
+  -d '{"from":"Architect","to":"Implementer","body":"Design doc ready, start building"}'
+```
+
+### MCP Server (Claude Code Integration)
+
+An MCP server exposes iDashboard tools natively to Claude Code agents, replacing curl-based reporting.
+
+```bash
+npm run build:mcp   # Build the MCP server
+```
+
+Register in `~/.claude/settings.json`:
+```json
+{
+  "mcpServers": {
+    "idashboard": {
+      "command": "node",
+      "args": ["<path>/dist/mcp-server.js"],
+      "env": { "IDASHBOARD_URL": "http://localhost:19280" }
+    }
+  }
+}
+```
+
+Tools available: `report_status`, `list_agents`, `create_task`, `claim_task`, `complete_task`, `get_tasks`, `send_message`.
+
+### Agent Profiles
+
+17 profiles in `~/.idashboard/profiles/`:
+
+| Profile | Role |
+|---------|------|
+| `project-manager.md` | Coordinates team, delegates tasks via REST API |
+| `architect.md` | System design and technology decisions |
+| `implementer.md` | Writes code and implements features |
+| `reviewer.md` | Code review and quality checks |
+| `skeptic.md` | Challenges assumptions, finds edge cases |
+| `technical-writer.md` | Documentation updates |
+| `security-auditor.md` | Security vulnerability detection |
+| `performance-analyst.md` | Performance analysis |
+
 ## Development
 
 ```bash
 npm run dev          # dev mode with hot reload
-npm test             # run unit tests (70 tests)
+npm run build:mcp    # build standalone MCP server
+npm test             # run unit tests (320+ tests)
 npm run test:watch   # watch mode
 npm run lint         # ESLint
 npm run typecheck    # TypeScript check
@@ -198,23 +305,31 @@ npm run typecheck    # TypeScript check
 - **React 19** + **Zustand** — UI and state management
 - **Tailwind CSS 4** — styling
 - **Fastify 5** — local HTTP API server
-- **Better SQLite 3** + **Drizzle ORM** — event storage
-- **Vitest** — unit tests
+- **Better SQLite 3** + **Drizzle ORM** — event, agent, task, and message storage
+- **node-pty** — cross-platform PTY for terminal agent I/O
+- **@modelcontextprotocol/sdk** — MCP server for Claude Code tool integration
+- **Vitest** — 320+ unit tests
 
 ### Project Structure
 
 ```
 src/
   main/           # Electron main process
+    api/          # Fastify REST API (port 19280)
     connectors/   # Connector implementations (claude-code, cursor, github, etc.)
-    services/     # Auth, circuit breaker, network reachability
+    db/           # Drizzle ORM schema (events, agents, tasks, messages)
+    mcp/          # MCP server for Claude Code integration
+    services/     # AgentRegistry, AgentLifecycle, TaskManager, MasterAgent, etc.
     ipc/          # IPC channel handlers
   renderer/       # React frontend
-    components/   # UI components (dashboard, settings, health panels)
+    components/   # UI components (dashboard, orchestrator, settings panels)
     store/        # Zustand state stores
     hooks/        # Custom React hooks
   shared/         # Types, constants, IPC channel definitions
   preload/        # Electron preload bridge
+resources/
+  profiles/       # 17 agent role profiles (project-manager, architect, etc.)
+  preambles/      # Agent preamble with REST API instructions
 ```
 
 ## License

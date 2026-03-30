@@ -40,12 +40,13 @@ tests/
 ```bash
 npm run dev              # Start in dev mode
 npm run build            # Production build (electron-vite build)
-npm test                 # Run unit tests (vitest)
+npm run build:mcp        # Build standalone MCP server (dist/mcp-server.js)
+npm test                 # Run unit tests (vitest, 320+ tests)
 npm run test:watch       # Watch mode tests
 npm run typecheck        # TypeScript check (tsc --noEmit)
 npm run lint             # ESLint
 npm run package:mac      # Build + package for macOS
-npx electron-rebuild -f -w better-sqlite3  # Rebuild native module
+npx electron-rebuild -f -w better-sqlite3 node-pty  # Rebuild native modules
 ```
 
 ## Critical Rules
@@ -82,9 +83,29 @@ npx electron-rebuild -f -w better-sqlite3  # Rebuild native module
 ### Experimental Mode (Multi-Agent Orchestration)
 
 - Gated behind `config.experimental.enabled` toggle in Settings > Experimental
-- Key services: `AgentRegistry`, `AgentLifecycleService`, `MasterAgentService`, `ITerm2Adapter`
-- 16 agent profiles in `resources/profiles/`
-- IPC channels: `agents:*`, `agent:*`, `agent-messages:*`, `master:*`
+- Key services: `AgentRegistry`, `AgentLifecycleService`, `MasterAgentService`, `TaskManager`
+- Terminal adapters: iTerm2 (macOS default, visible tabs) or PTY (cross-platform, headless)
+- 17 agent profiles in `resources/profiles/` (including `project-manager.md`)
+- IPC channels: `agents:*`, `agent:*`, `agent-messages:*`, `master:*`, `tasks:*`
+- Agent state persisted in SQLite (`agents`, `agent_messages`, `agent_tasks` tables)
+- Agents recover from DB on restart; stale sessions cleaned up automatically
+- MCP server (`src/main/mcp/server.ts`) exposes 7 tools to Claude Code agents
+
+### Agent REST API
+
+All agent endpoints require experimental mode enabled.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/agents` | `GET` | List all registered agents |
+| `/agents/:id` | `DELETE` | Remove an agent |
+| `/agents/spawn` | `POST` | Spawn a new agent (body: `{name, profilePath?}`) |
+| `/agent-report` | `POST` | Agent status report (body: `{agentName, status, shortSummary}`) |
+| `/tasks` | `GET` | List tasks (query: `status?`, `assignedTo?`) |
+| `/tasks` | `POST` | Create task (body: `{title, createdBy, assignTo?}`) |
+| `/tasks/:id` | `PATCH` | Update/claim/complete task |
+| `/messages` | `GET` | List messages (query: `agent?`, `limit?`) |
+| `/messages` | `POST` | Send agent-to-agent message (body: `{from, to, body}`) |
 
 ## Coding Standards
 
