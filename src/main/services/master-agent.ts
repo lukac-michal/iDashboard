@@ -4,6 +4,7 @@
 
 import { EventEmitter } from 'node:events';
 import { log } from '@main/utils/log';
+import { traceMessage } from './tracing';
 import type { AgentLifecycleService } from './agent-lifecycle';
 import type { AgentRegistry } from './agent-registry';
 import type { ConnectorEngine } from '@main/connectors/engine';
@@ -144,6 +145,7 @@ export class MasterAgentService extends EventEmitter {
       this.messages = this.messages.slice(-MAX_MESSAGES);
     }
     this.store?.insertMessage(message);
+    traceMessage(message.from, message.to, message.body);
     this.emit('message', message);
   }
 }

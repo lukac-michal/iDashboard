@@ -38,6 +38,7 @@ import { AgentLifecycleService } from './services/agent-lifecycle';
 import { MasterAgentService } from './services/master-agent';
 import { TaskManager } from './services/task-manager';
 import { AgentStore } from './db/agent-store';
+import { initTracing, shutdownTracing } from './services/tracing';
 import { registerTaskRoutes } from './api/routes/tasks';
 import { registerMessageRoutes } from './api/routes/messages';
 import { SlackBridgeService } from './services/slack-bridge';
@@ -363,6 +364,12 @@ async function bootstrap(): Promise<void> {
   // --- Experimental Mode: Agent Orchestration (sync init only, spawn is deferred) ---
   if (config.experimental?.enabled) {
     log('Main', 'Experimental mode enabled — initializing agent orchestration');
+
+    // Initialize Phoenix tracing if configured
+    if (config.experimental.phoenixEnabled && config.experimental.phoenixUrl) {
+      await initTracing(config.experimental.phoenixUrl);
+    }
+
     const agentStore = new AgentStore(db);
     agentRegistry = new AgentRegistry(config.experimental.healthCheckIntervalMs * 3, agentStore);
     const terminalAdapter = await createTerminalAdapter();
@@ -734,6 +741,7 @@ app.on('before-quit', async () => {
   slackChannelLogger?.destroy();
   slackBridge?.destroy();
   agentLifecycle?.destroy();
+  await shutdownTracing();
   shortcutService?.destroy();
   tokenRefreshService?.stop();
   autoUpdater?.stop();

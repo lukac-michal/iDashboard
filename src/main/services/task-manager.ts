@@ -5,6 +5,7 @@
 import { EventEmitter } from 'node:events';
 import { nanoid } from 'nanoid';
 import { log } from '@main/utils/log';
+import { traceTaskCreated, traceTaskClaimed, traceTaskCompleted } from './tracing';
 import type { AgentStore } from '@main/db/agent-store';
 import type { AgentTask, AgentTaskStatus } from '@shared/types';
 
@@ -27,6 +28,7 @@ export class TaskManager extends EventEmitter {
       createdAt: Date.now(),
     };
     this.store.insertTask(task);
+    traceTaskCreated(task.id, title, createdBy, assignTo);
     log('TaskManager', `Created task: ${task.id} - ${title}`);
     this.emit('task:created', task);
     return task;
@@ -48,6 +50,7 @@ export class TaskManager extends EventEmitter {
 
     this.store.updateTask(taskId, { status: 'in_progress', assignedTo: agentId });
     const updated = this.store.getTask(taskId)!;
+    traceTaskClaimed(taskId, agentId);
     log('TaskManager', `Task ${taskId} claimed by ${agentId}`);
     this.emit('task:updated', updated);
     return updated;
@@ -63,6 +66,7 @@ export class TaskManager extends EventEmitter {
       result,
     });
     const updated = this.store.getTask(taskId)!;
+    traceTaskCompleted(taskId, updated.assignedTo, result);
     log('TaskManager', `Task ${taskId} completed`);
     this.emit('task:completed', updated);
     return updated;

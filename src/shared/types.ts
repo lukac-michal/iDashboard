@@ -288,6 +288,8 @@ export interface AppConfig {
     repoPath: string;
     agentProfilesDir: string;
     healthCheckIntervalMs: number;
+    phoenixEnabled?: boolean;
+    phoenixUrl?: string;
   };
   slackBridge: {
     enabled: boolean;

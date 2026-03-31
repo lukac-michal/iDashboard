@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import type { APIContext } from '../server';
 import { API_PREFIX } from '@shared/constants';
 import { log, warn } from '@main/utils/log';
+import { traceAgentReport } from '@main/services/tracing';
 import type { AgentReportRequest, AgentReportStatus } from '@shared/types';
 
 const VALID_STATUSES: AgentReportStatus[] = ['working', 'done', 'question', 'blocked', 'error'];
@@ -45,6 +46,7 @@ export function registerAgentReportRoutes(server: FastifyInstance, ctx: APIConte
     }
 
     registry.updateReport(agent.id, body.status, body.shortSummary);
+    traceAgentReport(body.agentName, body.status, body.shortSummary);
     log('AgentReport', `${body.agentName}: ${body.status} — ${body.shortSummary}`);
 
     // Surface notification for question/blocked statuses
