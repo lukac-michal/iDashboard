@@ -169,6 +169,8 @@ export const appConfigSchema = z.object({
     repoPath: z.string().default(''),
     agentProfilesDir: z.string().default(''),
     healthCheckIntervalMs: z.number().int().min(1000).default(10000),
+    phoenixEnabled: z.boolean().default(false),
+    phoenixUrl: z.string().default(''),
   }).default({}),
   slackBridge: z.object({
     enabled: z.boolean().default(false),

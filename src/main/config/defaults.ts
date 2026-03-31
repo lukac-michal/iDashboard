@@ -107,6 +107,8 @@ export const DEFAULT_CONFIG: AppConfig = {
     repoPath: '',
     agentProfilesDir: '',
     healthCheckIntervalMs: 10000,
+    phoenixEnabled: false,
+    phoenixUrl: '',
   },
   slackBridge: {
     enabled: false,
