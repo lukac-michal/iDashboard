@@ -2,6 +2,9 @@
 // Health & Diagnostics Routes
 // ============================================================
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import type { FastifyInstance } from 'fastify';
 import type { APIContext } from '../server';
 import { API_PREFIX } from '@shared/constants';
@@ -124,6 +127,24 @@ export function registerHealthRoutes(server: FastifyInstance, ctx: APIContext): 
       return reply.send({ ok: true, agent });
     } catch (e) {
       return reply.code(500).send({ ok: false, error: (e as Error).message });
+    }
+  });
+
+  // List available agent profiles
+  server.get(`${API_PREFIX}/profiles`, async () => {
+    const profilesDir = path.join(os.homedir(), '.idashboard', 'profiles');
+    try {
+      if (!fs.existsSync(profilesDir)) return [];
+      return fs.readdirSync(profilesDir)
+        .filter(f => f.endsWith('.md'))
+        .sort()
+        .map(f => ({
+          name: f.replace(/\.md$/, '').replace(/-/g, ' '),
+          filename: f,
+          path: path.join(profilesDir, f),
+        }));
+    } catch {
+      return [];
     }
   });
 }

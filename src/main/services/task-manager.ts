@@ -5,7 +5,7 @@
 import { EventEmitter } from 'node:events';
 import { nanoid } from 'nanoid';
 import { log } from '@main/utils/log';
-import { traceTaskCreated, traceTaskClaimed, traceTaskCompleted } from './tracing';
+import { traceTaskCreated, traceTaskClaimed, traceTaskCompleted, traceTaskUnblocked } from './tracing';
 import type { AgentStore } from '@main/db/agent-store';
 import type { AgentTask, AgentTaskStatus } from '@shared/types';
 
@@ -69,6 +69,22 @@ export class TaskManager extends EventEmitter {
     traceTaskCompleted(taskId, updated.assignedTo, result);
     log('TaskManager', `Task ${taskId} completed`);
     this.emit('task:completed', updated);
+
+    // Check if completing this task unblocks dependent tasks
+    const pending = this.store.getTasks({ status: 'pending' });
+    for (const pendingTask of pending) {
+      if (!pendingTask.blockedBy?.includes(taskId)) continue;
+      const stillBlocked = pendingTask.blockedBy.filter(id => {
+        const blocker = this.store.getTask(id);
+        return blocker && blocker.status !== 'completed';
+      });
+      if (stillBlocked.length === 0) {
+        traceTaskUnblocked(pendingTask.id, taskId);
+        log('TaskManager', `Task ${pendingTask.id} unblocked by completion of ${taskId}`);
+        this.emit('task:unblocked', pendingTask);
+      }
+    }
+
     return updated;
   }
 

@@ -414,6 +414,21 @@ async function bootstrap(): Promise<void> {
         }
       }
     });
+    taskManager.on('task:unblocked', (task: AgentTask) => {
+      pushToRenderer(mainWindow, IPC.TASKS_STREAM, taskManager!.getTasks());
+      // Auto-dispatch unblocked task to its assigned agent
+      if (task.assignedTo && agentLifecycle) {
+        const agent = agentRegistry!.findByName(task.assignedTo);
+        if (agent) {
+          agentLifecycle.sendTextToAgent(agent.id, task.title).then(() => {
+            taskManager!.claimTask(task.id, task.assignedTo!);
+            log('TaskManager', `Auto-dispatched unblocked task ${task.id} to ${task.assignedTo}`);
+          }).catch((err) => {
+            warn('TaskManager', `Failed to dispatch unblocked task: ${err}`);
+          });
+        }
+      }
+    });
 
     // Push agent updates to renderer
     agentRegistry.on('agent:registered', () => {

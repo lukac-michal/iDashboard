@@ -56,12 +56,42 @@ When `assignTo` is set, the task is automatically sent to that agent's terminal.
 curl -s http://127.0.0.1:{{PORT}}/api/v1/tasks
 ```
 
+### Create a task with dependencies
+```bash
+curl -s -X POST http://127.0.0.1:{{PORT}}/api/v1/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"title":"TASK_DESCRIPTION","createdBy":"{{AGENT_NAME}}","assignTo":"AGENT_NAME","blockedBy":["TASK_ID_1","TASK_ID_2"]}'
+```
+Tasks with `blockedBy` will NOT be dispatched until all blocking tasks are completed. When the last blocker completes, the task is automatically dispatched to the assigned agent.
+
 ### Complete a task
 ```bash
 curl -s -X PATCH http://127.0.0.1:{{PORT}}/api/v1/tasks/TASK_ID \
   -H "Content-Type: application/json" \
   -d '{"status":"completed","result":"SUMMARY_OF_WORK"}'
 ```
+
+## Team Management
+
+### List available agent profiles
+```bash
+curl -s http://127.0.0.1:{{PORT}}/api/v1/profiles
+```
+Returns a list of specialist profiles (architect, implementer, reviewer, etc.) with their file paths.
+
+### Spawn a new agent
+```bash
+curl -s -X POST http://127.0.0.1:{{PORT}}/api/v1/agents/spawn \
+  -H "Content-Type: application/json" \
+  -d '{"name":"AGENT_NAME","profilePath":"PROFILE_PATH"}'
+```
+Creates a new agent in a dedicated iTerm2 tab. Use the `path` field from the profiles list as `profilePath`.
+
+### Terminate an agent
+```bash
+curl -s -X DELETE http://127.0.0.1:{{PORT}}/api/v1/agents/AGENT_ID
+```
+Removes an agent and closes its terminal session. Use the `id` field from the agents list.
 
 ## Receiving Tasks
 

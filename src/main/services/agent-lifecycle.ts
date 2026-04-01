@@ -6,6 +6,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { log, warn } from '@main/utils/log';
+import { traceAgentSpawned } from './tracing';
 import type { AgentRegistry } from './agent-registry';
 import type { TerminalAdapter, TerminalSession } from './terminal-adapter';
 import type { AgentInfo } from '@shared/types';
@@ -94,6 +95,7 @@ export class AgentLifecycleService {
     };
 
     this.registry.register(agent);
+    traceAgentSpawned(opts.name, opts.profilePath);
     return agent;
   }
 

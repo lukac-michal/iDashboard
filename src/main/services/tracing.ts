@@ -197,6 +197,39 @@ export function traceMessage(from: string, to: string, bodyPreview: string): voi
 }
 
 /**
+ * Trace an agent being spawned.
+ */
+export function traceAgentSpawned(agentName: string, profile?: string): void {
+  if (!tracer) return;
+
+  const span = tracer.startSpan('agent.spawned', {
+    attributes: {
+      'agent.name': agentName,
+      'agent.profile': profile ?? 'none',
+    },
+  });
+  span.end();
+}
+
+/**
+ * Trace a task being unblocked by dependency completion.
+ */
+export function traceTaskUnblocked(taskId: string, unblockedBy: string): void {
+  if (!tracer) return;
+
+  const parentSpan = activeTaskSpans.get(taskId);
+  const ctx = parentSpan ? trace.setSpan(context.active(), parentSpan) : context.active();
+
+  const span = tracer.startSpan('task.unblocked', {
+    attributes: {
+      'task.id': taskId,
+      'task.unblocked_by': unblockedBy,
+    },
+  }, ctx);
+  span.end();
+}
+
+/**
  * Shutdown tracing — flush any pending spans.
  */
 export async function shutdownTracing(): Promise<void> {
